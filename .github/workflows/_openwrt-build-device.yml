@@ -63,6 +63,9 @@ on:
 jobs:
   build:
     name: 编译 ${{ inputs.device }}
+    # 无法按构建号锁定镜像（actions/runner-images#13034 官方拒绝，带日期 label 会导致永久 queued）。
+    # ubuntu-22.04 当前镜像 20260907.292 的 step6 hang / step7 gnu.org 超时已由脚本层 workaround
+    # 规避（strip full-upgrade + automake 多源 fallback）。若仍不稳，plan B 是迁移 ubuntu-24.04。
     runs-on: ubuntu-22.04
     steps:
       - name: Checkout repository
@@ -141,8 +144,23 @@ jobs:
           echo "Disk after cleanup:"
           df -hT
 
+      - name: Tune block device readahead (runner-loss mitigation)
+        shell: bash
+        run: |
+          # actions/runner-images#13770：新内核默认 read_ahead_kb 由 128 提到 4096，
+          # 重 I/O（apt 装包 / 编译 / 下载）时打满 page cache → I/O 抖动 → hosted
+          # runner lost communication。官方 udev 修复(#13938)只 pin SCSI(sd*)，
+          # Azure v5/v6 宿主机的 NVMe(nvme*) 漏网。这里对所有块设备统一 pin 128。
+          # 运行时 sysfs 参数，免重启、job 结束 VM 即销毁，无持久副作用。
+          echo "== read_ahead_kb 调整前 =="
+          for f in /sys/block/*/queue/read_ahead_kb; do printf '%s = %s\n' "$f" "$(cat "$f" 2>/dev/null)"; done
+          for f in /sys/block/*/queue/read_ahead_kb; do echo 128 | sudo tee "$f" >/dev/null 2>&1 || true; done
+          echo "== read_ahead_kb 调整后 =="
+          for f in /sys/block/*/queue/read_ahead_kb; do printf '%s = %s\n' "$f" "$(cat "$f" 2>/dev/null)"; done
+
       - name: Initialize build environment
         shell: bash
+        timeout-minutes: 15
         env:
           DEBIAN_FRONTEND: noninteractive
           TZ: ${{ inputs.timezone }}
@@ -150,7 +168,16 @@ jobs:
           sudo rm -rf /etc/apt/sources.list.d/*
           sudo -E apt-get -yqq update
           sudo -E apt-get -yqq purge azure-cli* ghc* zulu* llvm* firefox google* dotnet* powershell openjdk* mongodb* moby* || true
-          sudo bash -c 'bash <(curl -s https://build-scripts.immortalwrt.org/init_build_environment.sh)'
+          # 防托管 runner 失联：ubuntu-22.04 新镜像(20260907.292)上 immortalwrt init
+          # 脚本的 apt full-upgrade 触发 hosted runner lost communication（同类回归见
+          # actions/runner-images#13770）。full-upgrade 仅刷新已装包版本，对编译非必需，
+          # 下载脚本后剥离该行；hold + NEEDRESTART_MODE=n 双保险防服务重启。
+          sudo apt-mark hold systemd systemd-resolved systemd-sysv dbus udev libsystemd0 libdbus-1-3 || true
+          curl -s https://build-scripts.immortalwrt.org/init_build_environment.sh -o /tmp/iwe.sh
+          sed -i 's/^[[:space:]]*apt full-upgrade.*/: # full-upgrade removed (runner-loss workaround)/' /tmp/iwe.sh
+          grep -q "runner-loss workaround" /tmp/iwe.sh || { echo "FATAL: full-upgrade strip failed"; exit 1; }
+          sudo NEEDRESTART_MODE=n NEEDRESTART_SUSPEND=1 bash /tmp/iwe.sh
+          sudo apt-mark unhold systemd systemd-resolved systemd-sysv dbus udev libsystemd0 libdbus-1-3 || true
           curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
           sudo -E apt-get install -y clang llvm nodejs dwarves
           sudo npm install -g pnpm
@@ -171,7 +198,20 @@ jobs:
           BUILD_DIR=/workdir/automake-1.17-build
           mkdir -p "$BUILD_DIR"
           cd "$BUILD_DIR"
-          curl -fL https://ftp.gnu.org/gnu/automake/automake-1.17.tar.xz -o automake-1.17.tar.xz
+          # 多源 fallback：gnu.org 在部分 Azure 宿主机上会 connect timeout
+          OK=0
+          for base in \
+            "https://ftp.gnu.org/gnu/automake" \
+            "https://mirrors.kernel.org/gnu/automake" \
+            "https://mirror.netcologne.de/gnu/automake" \
+            "https://mirrors.tuna.tsinghua.edu.cn/gnu/automake"; do
+            echo "尝试下载: $base/automake-1.17.tar.xz"
+            if curl -fL --connect-timeout 20 --max-time 120 -o automake-1.17.tar.xz "$base/automake-1.17.tar.xz"; then
+              OK=1; echo "下载成功: $base"; break
+            fi
+            echo "该源失败，切换下一个…"
+          done
+          [ "$OK" = "1" ] || { echo "FATAL: 所有 automake 源均下载失败"; exit 1; }
           rm -rf automake-1.17-src
           mkdir -p automake-1.17-src
           tar -xf automake-1.17.tar.xz -C automake-1.17-src --strip-components=1
