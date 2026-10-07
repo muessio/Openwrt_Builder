@@ -13,7 +13,7 @@ on:
       tag2:
         description: 'ImmortalWrt版本'
         required: false
-        default: 'v24.10.4'
+        default: 'main'
 
 env:
   REPO_URL_IMM: https://github.com/immortalwrt/immortalwrt.git
@@ -100,8 +100,6 @@ jobs:
         git clone ${{ matrix.repo_url }} --single-branch -b ${{ matrix.repo_branch }} openwrt
         ln -sf /workdir/openwrt $GITHUB_WORKSPACE/openwrt
         cd openwrt
-        git fetch --tags
-        git checkout "tags/${TAG2}" || git checkout "${TAG2}" || true
         echo "::group::OpenWrt source revision"
         git log -1 --oneline
         git remote -v
