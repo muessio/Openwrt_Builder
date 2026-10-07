@@ -238,7 +238,7 @@ jobs:
         source-tag: ${{ env.TAG2 }}
         release-tag-prefix: immortalwrt_brume3
         source-url: ${{ matrix.repo_url }}
-        artifact-name: OpenWrt_firmware${{ env.DEVICE_NAME }}${{ env.FILE_DATE }}
+        artifact-name: OpenWrt_firmware${{ env.DEVICE_NAME }}{{ env.FILE_DATE }}
 
   publish_release:
     name: 合并并发布固件
