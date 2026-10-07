@@ -1,4 +1,4 @@
-name: Build immortalwrt
+name: Build ImmortalWrt Brume 3
 
 on:
   #schedule:
@@ -19,7 +19,6 @@ env:
   REPO_URL_IMM: https://github.com/immortalwrt/immortalwrt.git
   REPO_BRANCH: main
   FEEDS_CONF: feeds.conf.default
-  CONFIG_FILE: ./config/immortalwrt.config
   CONFIG_FILE_DOCKER: ./config/docker.config
   DIY_P1_SH: ./sh/scripts-part1.sh
   DIY_P2_SH: ./sh/scripts-part2.sh
@@ -31,7 +30,19 @@ env:
 
 jobs:
   build:
+    name: 编译 ${{ matrix.device }}
     runs-on: ubuntu-22.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - device: GL-MT5000
+            repo_url: https://github.com/immortalwrt/immortalwrt.git
+            repo_branch: main
+            config_file: ./config/mt5000.config
+            workflow_name: GL-MT5000
+            sonic_fullcone: "true"
+
     steps:
     - name: Checkout
       uses: actions/checkout@main
@@ -41,15 +52,14 @@ jobs:
         echo "::group::Workflow inputs"
         echo "docker=${{ github.event.inputs.docker }}"
         echo "tag2=${{ github.event.inputs.tag2 }}"
-        echo "repo-url=$REPO_URL_IMM"
-        echo "repo-branch=$REPO_BRANCH"
-        echo "config-file=$CONFIG_FILE"
+        echo "device=${{ matrix.device }}"
+        echo "config-file=${{ matrix.config_file }}"
         echo "docker-config=$CONFIG_FILE_DOCKER"
         echo "feeds-conf=$FEEDS_CONF"
         echo "diy-p1-sh=$DIY_P1_SH"
         echo "diy-p2-sh=$DIY_P2_SH"
         echo "default-setting=$DEFAULT_SETTING"
-        for path in "$CONFIG_FILE" "$CONFIG_FILE_DOCKER" "$FEEDS_CONF" "$DIY_P1_SH" "$DIY_P2_SH" "$DEFAULT_SETTING" "files"; do
+        for path in "${{ matrix.config_file }}" "$CONFIG_FILE_DOCKER" "$FEEDS_CONF" "$DIY_P1_SH" "$DIY_P2_SH" "$DEFAULT_SETTING" "files"; do
           if [ -e "$path" ]; then
             echo "exists: $path"
           else
@@ -63,13 +73,11 @@ jobs:
         echo "::group::Disk cleanup"
         echo "清理前磁盘空间："
         df -hT
-        # 仅删除最占空间的大型预装软件
         sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
         sudo docker image prune --all --force
         echo "清理后磁盘空间："
         df -hT
         echo "::endgroup::"
-
 
     - name: 初始化环境
       env:
@@ -82,32 +90,29 @@ jobs:
           sudo timedatectl set-timezone "$TZ"
           sudo mkdir -p /workdir
           sudo chown $USER:$GROUPS /workdir
-          echo "WORKFLOW_NAME=x86_immortalwrt" >> $GITHUB_ENV
+          echo "WORKFLOW_NAME=${{ matrix.workflow_name }}" >> $GITHUB_ENV
           echo "TAG2=${{ github.event.inputs.tag2 }}" | tr ' ' '_' >> $GITHUB_ENV
-
 
     - name: 克隆源代码
       working-directory: /workdir
       run: |
         df -hT $PWD
-        REPO_URL=$REPO_URL_IMM
-        git clone $REPO_URL --single-branch openwrt
+        git clone ${{ matrix.repo_url }} --single-branch -b ${{ matrix.repo_branch }} openwrt
         ln -sf /workdir/openwrt $GITHUB_WORKSPACE/openwrt
         cd openwrt
-        git fetch --tags # 获取最新的标签
-        git checkout "tags/${TAG2}" || git checkout "${TAG2}" # 尝试检出标签，如果失败则尝试检出分支
+        git fetch --tags
+        git checkout "tags/${TAG2}" || git checkout "${TAG2}" || true
         echo "::group::OpenWrt source revision"
         git log -1 --oneline
         git remote -v
         git status --short
         echo "::endgroup::"
         echo "OPENWRT_PATH=$PWD" >> $GITHUB_ENV
-        
+
     - name: 加载自定义源
       run: |
-        echo "WORKFLOW_NAME=x86_immortalwrt" >> $GITHUB_ENV
         [ -e $FEEDS_CONF ] && mv $FEEDS_CONF openwrt/feeds.conf.default
-        chmod +x $DIY_P1_SH
+        [ -f $DIY_P1_SH ] && chmod +x $DIY_P1_SH
         cd openwrt
         echo "::group::Feeds configuration"
         pwd
@@ -115,43 +120,39 @@ jobs:
         sed -n '1,80p' feeds.conf.default || true
         echo "::endgroup::"
         ./scripts/feeds update -a
-        $GITHUB_WORKSPACE/$DIY_P1_SH
-
-    #- name: 更新源
-    #  run: cd openwrt && ./scripts/feeds update -a
+        [ -f $GITHUB_WORKSPACE/$DIY_P1_SH ] && $GITHUB_WORKSPACE/$DIY_P1_SH || true
 
     - name: 安装源
       run: cd openwrt && ./scripts/feeds install -a
 
     - name: 加载自定义配置
       run: |
-        echo "WORKFLOW_NAME=x86_immortalwrt" >> $GITHUB_ENV
         [ -e $DEFAULT_SETTING ] && mv $DEFAULT_SETTING openwrt/package/default-settings-m0eak
         [ -e files ] && mv ./files openwrt/files
-        [ -e $CONFIG_FILE ] && mv $CONFIG_FILE openwrt/.config
+        [ -e ${{ matrix.config_file }} ] && mv ${{ matrix.config_file }} openwrt/.config
         if [ "${{ github.event.inputs.docker }}" = "true" ] && [ -e $CONFIG_FILE_DOCKER ]; then
           cat $CONFIG_FILE_DOCKER >> openwrt/.config
         fi
-        chmod +x $DIY_P2_SH
+        [ -f $DIY_P2_SH ] && chmod +x $DIY_P2_SH
         cd openwrt
         echo "::group::Pre-defconfig workspace snapshot"
         pwd
         ls -ld package/default-settings-m0eak files .config 2>/dev/null || true
         grep -E '^(CONFIG_TARGET|CONFIG_PACKAGE_(docker|dockerd|luci-app-dockerman|containerd|runc))' .config || true
         echo "::endgroup::"
-        $GITHUB_WORKSPACE/$DIY_P2_SH
+        [ -f $GITHUB_WORKSPACE/$DIY_P2_SH ] && $GITHUB_WORKSPACE/$DIY_P2_SH || true
         make defconfig
         echo "::group::当前 diffconfig"
-        ./scripts/diffconfig.sh        
+        ./scripts/diffconfig.sh
         echo "::endgroup::"
 
     - name: 检查并恢复缓存
       id: check-cache
       uses: actions/cache@v4
       with:
-        key: ${{ runner.os }}-${{ github.workflow }}-${{ env.TAG2 }}-${{ hashFiles('openwrt/.config', 'openwrt/feeds.conf.default', '**/scripts-part*.sh') }}
+        key: ${{ runner.os }}-${{ github.workflow }}-${{ matrix.device }}-${{ env.TAG2 }}-${{ hashFiles('openwrt/.config', 'openwrt/feeds.conf.default', '**/scripts-part*.sh') }}
         restore-keys: |
-          ${{ runner.os }}-${{ github.workflow }}-${{ env.TAG2 }}-
+          ${{ runner.os }}-${{ github.workflow }}-${{ matrix.device }}-${{ env.TAG2 }}-
         path: |
           openwrt/.ccache
           openwrt/staging_dir/host*
@@ -171,20 +172,14 @@ jobs:
           echo "时间戳更新完毕!"
         else
           echo "缓存未命中，开始主动清理相关的旧缓存..."
-          
-          # 清理 Go 模块缓存，防止污染
           rm -rf openwrt/dl/go-mod-cache
-
-          # 构造用于搜索的 key 前缀
-          CACHE_PREFIX="${{ runner.os }}-${{ github.workflow }}-${{ env.TAG2 }}-"
-          
-          echo "正在搜索前缀为 '${CACHE_PREFIX}' 的旧缓存..."
-          CACHE_LIST=$(gh cache list --key "$CACHE_PREFIX" | cut -f 1)
-          
+          CACHE_PREFIX="${{ runner.os }}-${{ github.workflow }}-${{ matrix.device }}-${{ env.TAG2 }}-$"
+          echo "正在搜索旧缓存..."
+          CACHE_LIST=$(gh cache list --key "${{ runner.os }}-${{ github.workflow }}-${{ matrix.device }}-${{ env.TAG2 }}" | cut -f 1)
           if [ -n "$CACHE_LIST" ]; then
             for CACHE_KEY in $CACHE_LIST; do
               echo "删除旧缓存: $CACHE_KEY"
-              gh cache delete "$CACHE_KEY" 
+              gh cache delete "$CACHE_KEY" || true
             done
             echo "相关旧缓存清理完毕!"
           else
@@ -195,13 +190,13 @@ jobs:
     - name: 下载软件包
       id: package
       run: |
-         cd openwrt
-         make download -j8
-         echo "::group::Download directory summary"
-         du -sh dl || true
-         find dl -size -1024c -exec ls -l {} \;
-         echo "::endgroup::"
-         find dl -size -1024c -exec rm -f {} \;
+          cd openwrt
+          make download -j8
+          echo "::group::Download directory summary"
+          du -sh dl || true
+          find dl -size -1024c -exec ls -l {} \;
+          echo "::endgroup::"
+          find dl -size -1024c -exec rm -f {} \;
 
     - name: 编译固件
       id: compile
@@ -243,8 +238,30 @@ jobs:
         upload-release: ${{ env.UPLOAD_RELEASE }}
         workflow-name: ${{ env.WORKFLOW_NAME }}
         source-tag: ${{ env.TAG2 }}
-        release-tag-prefix: immortalwrt_x86_64
-        source-url: ${{ env.REPO_URL_IMM }}
+        release-tag-prefix: immortalwrt_brume3
+        source-url: ${{ matrix.repo_url }}
         artifact-name: OpenWrt_firmware${{ env.DEVICE_NAME }}${{ env.FILE_DATE }}
-  
-  
+
+  publish_release:
+    name: 合并并发布固件
+    needs: build
+    runs-on: ubuntu-22.04
+    if: success()
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@main
+
+      - name: Publish release
+        uses: ./.github/actions/openwrt-publish-release
+        with:
+          release-tag-prefix: immortalwrt_brume3
+          release-files: |
+            all-artifacts/firmware-*/*.manifest
+            all-artifacts/firmware-*/*sysupgrade.bin
+            all-artifacts/firmware-*/*factory.bin
+            all-artifacts/firmware-*/*initramfs-kernel.bin
+            all-artifacts/firmware-*/*-version.buildinfo
+            all-artifacts/firmware-*/*-sha256sums
+            all-artifacts/firmware-*/*-profiles.json
+            all-artifacts/firmware-*/*-config.buildinfo
+            all-artifacts/firmware-*/*-feeds.buildinfo
