@@ -165,6 +165,11 @@ jobs:
           DEBIAN_FRONTEND: noninteractive
           TZ: ${{ inputs.timezone }}
         run: |
+          while sudo fuser /var/lib/dpkg/lock-frontend >/dev/null 2>&1; do
+            echo "Warte darauf, dass apt-Locks frei werden..."
+            sleep 5
+          done
+
           sudo rm -rf /etc/apt/sources.list.d/*
           sudo -E apt-get -yqq update
           sudo -E apt-get -yqq purge azure-cli* ghc* zulu* llvm* firefox google* dotnet* powershell openjdk* mongodb* moby* || true
