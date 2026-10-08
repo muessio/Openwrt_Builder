@@ -1,8 +1,6 @@
 name: Build ImmortalWrt Brume 3 (GL-MT5000)
 
 on:
-  #schedule:
-    #- cron: '0 16 * * *'
   repository_dispatch:
   workflow_dispatch:
     inputs:
@@ -15,9 +13,10 @@ on:
         required: false
         default: 'master'
 
+permissions:
+  contents: write
+
 env:
-  REPO_URL_IMM: https://github.com/immortalwrt/immortalwrt.git
-  REPO_BRANCH: master
   FEEDS_CONF: feeds.conf.default
   CONFIG_FILE_DOCKER: ./config/docker.config
   DIY_P1_SH: ./sh/scripts-part1.sh
@@ -38,8 +37,8 @@ jobs:
       matrix:
         include:
           - device: GL-MT5000
-            repo_url: https://github.com/immortalwrt/immortalwrt.git
-            repo_branch: master
+            repo_url: https://github.com/GLiNet-Tech/openwrt.git
+            repo_branch: mt5000
             config_file: ./config/immortalwrt.config
             workflow_name: gl-mt5000_immortalwrt
             sonic_fullcone: "true"
@@ -84,19 +83,19 @@ jobs:
       env:
         DEBIAN_FRONTEND: noninteractive
       run: |
-          sudo -E apt-get update
-          sudo -E apt-get -y install dos2unix libfuse-dev
-          sudo bash -c 'bash <(curl -s https://build-scripts.immortalwrt.org/init_build_environment.sh)'
-          sudo -E systemctl daemon-reload
-          sudo timedatectl set-timezone "$TZ"
-          sudo mkdir -p /workdir
-          sudo chown $USER:$GROUPS /workdir
-          echo "WORKFLOW_NAME=${{ matrix.workflow_name }}" >> $GITHUB_ENV
-          INPUT_TAG2="${{ github.event.inputs.tag2 }}"
-          if [ -z "$INPUT_TAG2" ]; then
-            INPUT_TAG2="master"
-          fi
-          echo "TAG2=$INPUT_TAG2" | tr ' ' '_' >> $GITHUB_ENV
+        sudo -E apt-get update
+        sudo -E apt-get -y install dos2unix libfuse-dev
+        sudo bash -c 'bash <(curl -s https://build-scripts.immortalwrt.org/init_build_environment.sh)'
+        sudo -E systemctl daemon-reload
+        sudo timedatectl set-timezone "$TZ"
+        sudo mkdir -p /workdir
+        sudo chown $USER:$GROUPS /workdir
+        echo "WORKFLOW_NAME=${{ matrix.workflow_name }}" >> $GITHUB_ENV
+        INPUT_TAG2="${{ github.event.inputs.tag2 }}"
+        if [ -z "$INPUT_TAG2" ]; then
+          INPUT_TAG2="master"
+        fi
+        echo "TAG2=$INPUT_TAG2" | tr ' ' '_' >> $GITHUB_ENV
 
     - name: 克隆源代码
       working-directory: /workdir
@@ -191,13 +190,13 @@ jobs:
     - name: 下载软件包
       id: package
       run: |
-          cd openwrt
-          make download -j8
-          echo "::group::Download directory summary"
-          du -sh dl || true
-          find dl -size -1024c -exec ls -l {} \;
-          echo "::endgroup::"
-          find dl -size -1024c -exec rm -f {} \;
+        cd openwrt
+        make download -j8
+        echo "::group::Download directory summary"
+        du -sh dl || true
+        find dl -size -1024c -exec ls -l {} \;
+        echo "::endgroup::"
+        find dl -size -1024c -exec rm -f {} \;
 
     - name: 编译固件
       id: compile
@@ -233,38 +232,19 @@ jobs:
         name: OpenWrt_bin_${{ steps.compile.outputs.device-name }}-${{ steps.compile.outputs.file-date }}
         path: openwrt/bin
 
-    - name: Release firmware
-      uses: ./.github/actions/openwrt-release-firmware
+    - name: GitHub Release erstellen
+      uses: softprops/action-gh-release@v2
       if: steps.compile.outputs.compile == 'success' && !cancelled()
       with:
-        upload-firmware: ${{ env.UPLOAD_FIRMWARE }}
-        upload-release: ${{ env.UPLOAD_RELEASE }}
-        workflow-name: ${{ env.WORKFLOW_NAME }}
-        source-tag: ${{ env.TAG2 }}
-        release-tag-prefix: immortalwrt_brume3
-        source-url: ${{ matrix.repo_url }}
-        artifact-name: OpenWrt_firmware${{ env.DEVICE_NAME }}{{ env.FILE_DATE }}
-
-  publish_release:
-    name: 合并并发布固件
-    needs: build
-    runs-on: ubuntu-22.04
-    if: success()
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@main
-
-      - name: Publish release
-        uses: ./.github/actions/openwrt-publish-release
-        with:
-          release-tag-prefix: immortalwrt_brume3
-          release-files: |
-            all-artifacts/firmware-*/*.manifest
-            all-artifacts/firmware-*/*sysupgrade.bin
-            all-artifacts/firmware-*/*factory.bin
-            all-artifacts/firmware-*/*initramfs-kernel.bin
-            all-artifacts/firmware-*/*-version.buildinfo
-            all-artifacts/firmware-*/*-sha256sums
-            all-artifacts/firmware-*/*-profiles.json
-            all-artifacts/firmware-*/*-config.buildinfo
-            all-artifacts/firmware-*/*-feeds.buildinfo
+        name: ImmortalWrt Brume 3 (GL-MT5000) ${{ steps.compile.outputs.file-date }}
+        tag_name: GL-MT5000_${{ steps.compile.outputs.file-date }}
+        body: |
+          Automatischer Firmware-Build für den GL.iNet GL-MT5000 (Brume 3).
+          Quelle: ${{ matrix.repo_url }} (${{ matrix.repo_branch }})
+          Datum: ${{ steps.compile.outputs.file-date }}
+        files: |
+          openwrt/bin/targets/*/*/*sysupgrade*
+          openwrt/bin/targets/*/*/*factory*
+          openwrt/bin/targets/*/*/*initramfs*
+          openwrt/bin/targets/*/*/*manifest*
+          openwrt/bin/targets/*/*/*sha256sums
