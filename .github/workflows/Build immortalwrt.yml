@@ -116,6 +116,10 @@ jobs:
         [ -e $FEEDS_CONF ] && mv $FEEDS_CONF openwrt/feeds.conf.default
         [ -f $DIY_P1_SH ] && chmod +x $DIY_P1_SH
         cd openwrt
+
+        # 禁用引发递归依赖冲突的源 (video / qt5 等)
+        sed -i 's/.*video/#&/' feeds.conf.default || true
+
         echo "::group::Feeds configuration"
         pwd
         ls -l feeds.conf.default || true
