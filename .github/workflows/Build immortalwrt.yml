@@ -1,4 +1,4 @@
-name: Build ImmortalWrt Brume 3
+name: Build ImmortalWrt Brume 3 (GL-MT5000)
 
 on:
   #schedule:
