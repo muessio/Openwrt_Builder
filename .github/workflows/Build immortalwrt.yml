@@ -17,7 +17,7 @@ on:
 
 env:
   REPO_URL_IMM: https://github.com/immortalwrt/immortalwrt.git
-  REPO_BRANCH: main
+  REPO_BRANCH: master
   FEEDS_CONF: feeds.conf.default
   CONFIG_FILE_DOCKER: ./config/docker.config
   DIY_P1_SH: ./sh/scripts-part1.sh
