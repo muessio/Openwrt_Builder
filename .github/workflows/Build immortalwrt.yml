@@ -37,8 +37,8 @@ jobs:
       matrix:
         include:
           - device: GL-MT5000
-            repo_url: https://github.com/GLiNet-Tech/openwrt.git
-            repo_branch: mt5000
+            repo_url: https://github.com/immortalwrt/immortalwrt.git
+            repo_branch: master
             config_file: ./config/immortalwrt.config
             workflow_name: gl-mt5000_immortalwrt
             sonic_fullcone: "true"
@@ -110,6 +110,30 @@ jobs:
         git status --short
         echo "::endgroup::"
         echo "OPENWRT_PATH=$PWD" >> $GITHUB_ENV
+
+    - name: Patch GL-MT5000 Target & Drivers
+      run: |
+        echo "::group::Import GL-MT5000 DTS and Board Definitions"
+        git clone --depth 1 -b mt5000 https://github.com/GLiNet-Tech/openwrt.git /tmp/glinet-src
+        
+        # 1. Device Tree Source kopieren
+        mkdir -p openwrt/target/linux/mediatek/dts
+        mkdir -p openwrt/target/linux/mediatek/files/arch/arm64/boot/dts/mediatek
+        cp -f /tmp/glinet-src/target/linux/mediatek/dts/*gl-mt5000* openwrt/target/linux/mediatek/dts/ 2>/dev/null || true
+        cp -f /tmp/glinet-src/target/linux/mediatek/files/arch/arm64/boot/dts/mediatek/*gl-mt5000* openwrt/target/linux/mediatek/files/arch/arm64/boot/dts/mediatek/ 2>/dev/null || true
+        
+        # 2. Base Files & Hardware Support kopieren
+        mkdir -p openwrt/target/linux/mediatek/filogic/base-files
+        cp -rf /tmp/glinet-src/target/linux/mediatek/filogic/base-files/* openwrt/target/linux/mediatek/filogic/base-files/ 2>/dev/null || true
+        
+        # 3. Profil-Definition für GL-MT5000 in filogic.mk injizieren falls fehlend
+        if ! grep -q "glinet_gl-mt5000" openwrt/target/linux/mediatek/image/filogic.mk; then
+          sed -n '/define Device\/glinet_gl-mt5000/,/endef/p' /tmp/glinet-src/target/linux/mediatek/image/filogic.mk >> openwrt/target/linux/mediatek/image/filogic.mk
+        fi
+        
+        rm -rf /tmp/glinet-src
+        echo "Import abgeschlossen."
+        echo "::endgroup::"
 
     - name: 加载自定义源
       run: |
@@ -233,7 +257,7 @@ jobs:
       uses: actions/upload-artifact@main
       if: steps.compile.outputs.compile == 'success' && env.UPLOAD_BIN_DIR == 'true'
       with:
-        name: OpenWrt_bin_${{ steps.compile.outputs.device-name }}-${{ steps.compile.outputs.file-date }}
+        name: ImmortalWrt_bin_${{ steps.compile.outputs.device-name }}-${{ steps.compile.outputs.file-date }}
         path: openwrt/bin
 
     - name: GitHub Release erstellen
@@ -241,10 +265,10 @@ jobs:
       if: steps.compile.outputs.compile == 'success' && !cancelled()
       with:
         name: ImmortalWrt Brume 3 (GL-MT5000) ${{ steps.compile.outputs.file-date }}
-        tag_name: GL-MT5000_${{ steps.compile.outputs.file-date }}
+        tag_name: ImmortalWrt_GL-MT5000_${{ steps.compile.outputs.file-date }}
         body: |
-          Automatischer Firmware-Build für den GL.iNet GL-MT5000 (Brume 3).
-          Quelle: ${{ matrix.repo_url }} (${{ matrix.repo_branch }})
+          Offizieller ImmortalWrt Build mit gepatchtem GL.iNet MT5000 Target-Support.
+          Basis: ${{ matrix.repo_url }} (${{ matrix.repo_branch }})
           Datum: ${{ steps.compile.outputs.file-date }}
         files: |
           openwrt/bin/targets/*/*/*sysupgrade*
