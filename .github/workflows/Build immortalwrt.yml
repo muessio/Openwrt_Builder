@@ -112,17 +112,19 @@ jobs:
         cp -f /tmp/glinet-src/target/linux/mediatek/files/arch/arm64/boot/dts/mediatek/*gl-mt5000* target/linux/mediatek/files/arch/arm64/boot/dts/mediatek/ 2>/dev/null || true
         cp -rf /tmp/glinet-src/target/linux/mediatek/filogic/base-files/* target/linux/mediatek/filogic/base-files/ 2>/dev/null || true
 
-        # Durchsucht alle Makefiles im Image-Ordner und importiert den gesamten Geräteblock
+        # Importiert die Gerätedefinition und registriert sie zwingend im Image-Builder
         for mk in /tmp/glinet-src/target/linux/mediatek/image/*.mk; do
           if grep -q -i "mt5000" "$mk"; then
             echo "Gefunden in $mk -> importiere nach filogic.mk"
-            sed -n '/define Device\/.*mt5000/,/endef/p' "$mk" >> target/linux/mediatek/image/filogic.mk
+            sed -n '/define Device\/glinet_gl-mt5000/,/endef/p' "$mk" >> target/linux/mediatek/image/filogic.mk
+            echo '$(eval $(call BuildImage,glinet_gl-mt5000))' >> target/linux/mediatek/image/filogic.mk
+            echo 'TARGET_DEVICES += glinet_gl-mt5000' >> target/linux/mediatek/image/filogic.mk
           fi
         done
 
-        # Sicherheits-Check: Sofortiger Abbruch bei Minute 1 falls nichts injiziert wurde
+        # Sicherheits-Check: Sofortiger Abbruch bei Minute 1, falls der Block fehlt
         echo "=== Überprüfe injizierte Definition in filogic.mk ==="
-        grep -n -A 10 -i "Device/.*mt5000" target/linux/mediatek/image/filogic.mk || { echo "FEHLER: MT5000 Gerätedefinition wurde nicht gefunden!"; exit 1; }
+        grep -n -A 15 -i "Device/glinet_gl-mt5000" target/linux/mediatek/image/filogic.mk || { echo "FEHLER: MT5000 Gerätedefinition wurde nicht gefunden!"; exit 1; }
 
         rm -rf /tmp/glinet-src
         rm -rf tmp
@@ -162,6 +164,11 @@ jobs:
         if [ "${{ github.event.inputs.docker }}" = "true" ] && [ -e $CONFIG_FILE_DOCKER ]; then
           cat $CONFIG_FILE_DOCKER >> openwrt/.config
         fi
+
+        # Verhindert den Kconfig-Fehler durch Squeezelite
+        sed -i '/CONFIG_PACKAGE_squeezelite/d' openwrt/.config 2>/dev/null || true
+        echo "# CONFIG_PACKAGE_squeezelite-custom is not set" >> openwrt/.config
+
         [ -f $DIY_P2_SH ] && chmod +x $DIY_P2_SH
         cd openwrt
         echo "::group::Pre-defconfig workspace snapshot"
@@ -170,10 +177,22 @@ jobs:
         grep -E '^(CONFIG_TARGET|CONFIG_PACKAGE_(docker|dockerd|luci-app-dockerman|containerd|runc))' .config || true
         echo "::endgroup::"
         [ -f $GITHUB_WORKSPACE/$DIY_P2_SH ] && $GITHUB_WORKSPACE/$DIY_P2_SH || true
+        
+        # Generiert die finale Konfiguration
         make defconfig
+
         echo "::group::当前 diffconfig"
         ./scripts/diffconfig.sh
         echo "::endgroup::"
+
+        # Validierungs-Schritt: Bricht sofort ab, falls make defconfig wieder auf openwrt_one zurückgefallen ist
+        echo "=== Überprüfe gewähltes Target ==="
+        grep "^CONFIG_TARGET_mediatek_filogic_DEVICE_glinet_gl-mt5000=y" .config || {
+          echo "FEHLER: Build-System hat gl-mt5000 verworfen!"
+          echo "Aktuell ausgewähltes Target:"
+          grep "^CONFIG_TARGET_mediatek_filogic_DEVICE_" .config
+          exit 1
+        }
 
     - name: 检查并恢复缓存
       id: check-cache
