@@ -13,7 +13,7 @@ on:
       tag2:
         description: 'ImmortalWrt版本'
         required: false
-        default: 'main'
+        default: 'master'
 
 env:
   REPO_URL_IMM: https://github.com/immortalwrt/immortalwrt.git
@@ -39,7 +39,7 @@ jobs:
         include:
           - device: GL-MT5000
             repo_url: https://github.com/immortalwrt/immortalwrt.git
-            repo_branch: main
+            repo_branch: master
             config_file: ./config/immortalwrt.config
             workflow_name: gl-mt5000_immortalwrt
             sonic_fullcone: "true"
@@ -94,7 +94,7 @@ jobs:
           echo "WORKFLOW_NAME=${{ matrix.workflow_name }}" >> $GITHUB_ENV
           INPUT_TAG2="${{ github.event.inputs.tag2 }}"
           if [ -z "$INPUT_TAG2" ]; then
-            INPUT_TAG2="main"
+            INPUT_TAG2="master"
           fi
           echo "TAG2=$INPUT_TAG2" | tr ' ' '_' >> $GITHUB_ENV
 
