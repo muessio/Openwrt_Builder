@@ -38,10 +38,6 @@ if [[ "$WORKFLOW_NAME" == "AXT-1800" || "$WORKFLOW_NAME" == "JDC-AX6600" ]]; the
         set_default_ip "192.168.100.1" "JDC-AX6600"
     fi
 
-    # 更新Golang版本（当前已停用，保留注释便于回滚）
-    # rm -rf feeds/packages/lang/golang && echo "删除golang"
-    # git clone https://github.com/sbwml/packages_lang_golang -b 25.x feeds/packages/lang/golang
-
     wget https://raw.githubusercontent.com/m0eak/openwrt_patch/refs/heads/main/gl-axt1800/9999-gl-axt1800-dts-change-cooling-level.patch && echo "下载成功" || echo "下载失败"
     mv 9999-gl-axt1800-dts-change-cooling-level.patch ./target/linux/qualcommax/patches-6.12/9999-gl-axt1800-dts-change-cooling-level.patch && echo "移动成功" || echo "移动失败"
     rm -f package/kernel/mac80211/patches/nss/ath11k/999-902-ath11k-fix-WDS-by-disabling-nwds.patch && echo "删除patch1成功"
@@ -51,14 +47,8 @@ if [[ "$WORKFLOW_NAME" == "AXT-1800" || "$WORKFLOW_NAME" == "JDC-AX6600" ]]; the
 elif [[ "$WORKFLOW_NAME" == "x86_immortalwrt" ]]; then
     echo ">>> 检测到: $WORKFLOW_NAME。开始执行 x86 immortalwrt 的特定修改"
     
-    # immortalwrt 工作流定义了 TAG2，所以 VERSION2 现在是有效的！
     VERSION2=${TAG2#v}
     echo "immortalwrt 当前版本 (VERSION2): $VERSION2"
-
-    # 更新Golang版本（当前已停用，保留注释便于回滚）
-    # rm -rf feeds/packages/lang/golang && echo "删除golang"
-    # git clone https://github.com/sbwml/packages_lang_golang -b 25.x feeds/packages/lang/golang
-    # cat feeds/packages/lang/golang/golang/Makefile
 
     # 修改默认IP
     set_default_ip "192.168.100.1" "x86"
@@ -73,8 +63,6 @@ elif [[ "$WORKFLOW_NAME" == "x86_immortalwrt" ]]; then
 # --- 逻辑块 3: 处理 TR-3000 ---
 elif [[ "$WORKFLOW_NAME" == "TR-3000" ]]; then
     echo ">>> 检测到设备: $WORKFLOW_NAME。开始执行 TR-3000 的特定修改"
-    #sed -i 's/192.168.6.1/192.168.100.209/g' package/base-files/files/bin/config_generate
-    #echo "TR-3000 IP 修改为 192.168.100.209"
 
 # --- 逻辑块 4: 处理 GL-MT3600BE ---
 elif [[ "$WORKFLOW_NAME" == "GL-MT3600BE" ]]; then
@@ -103,17 +91,46 @@ elif [[ "$WORKFLOW_NAME" == "GL-MT3600BE" ]]; then
 
     set_default_ip "192.168.9.1" "mt3600be"
 
-# --- 逻辑块 5: 处理 GL-MT5000 ---
+# --- 逻辑块 5: 处理 GL-MT5000 (OpenWrt Basis) ---
 elif [[ "$WORKFLOW_NAME" == "GL-MT5000" ]]; then
     echo ">>> 检测到设备: $WORKFLOW_NAME。开始执行 MT5000 的特定修改"
-    # 源码: GLiNet-Tech/openwrt @ mt5000 (OpenWrt main 6.18, RTL8366UB DSA 驱动已内置内核)
+    # 源码: GLiNet-Tech/openwrt @ mt5000 (OpenWrt main, RTL8366UB DSA 驱动已内置内核)
     set_default_ip "192.168.100.1" "mt5000"
 
-# --- 逻辑块 6: 处理 gl-mt5000_immortalwrt ---
+# --- 逻辑块 6: 处理 gl-mt5000_immortalwrt (ImmortalWrt Basis + Patches) ---
 elif [[ "$WORKFLOW_NAME" == "gl-mt5000_immortalwrt" ]]; then
-    echo ">>> 检测到设备: $WORKFLOW_NAME。开始执行 ImmortalWrt MT5000 测试配置"
-    
-    # Wir setzen nur die IP und testen, ob das Image im master-Zweig nativ baut
+    echo ">>> 检测到设备: $WORKFLOW_NAME。开始向 ImmortalWrt 导入 GL-MT5000 驱动与板级支持"
+
+    GL_TMP_DIR="/tmp/glinet_mt5000_source"
+    rm -rf "$GL_TMP_DIR"
+    git clone --depth 1 -b mt5000 https://github.com/GLiNet-Tech/openwrt.git "$GL_TMP_DIR"
+
+    if [[ -d "$GL_TMP_DIR" ]]; then
+        echo "1. 复制 Device Tree (DTS)..."
+        mkdir -p target/linux/mediatek/dts
+        mkdir -p target/linux/mediatek/files/arch/arm64/boot/dts/mediatek
+        cp -f "$GL_TMP_DIR"/target/linux/mediatek/dts/*gl-mt5000* target/linux/mediatek/dts/ 2>/dev/null || true
+        cp -f "$GL_TMP_DIR"/target/linux/mediatek/files/arch/arm64/boot/dts/mediatek/*gl-mt5000* target/linux/mediatek/files/arch/arm64/boot/dts/mediatek/ 2>/dev/null || true
+
+        echo "2. 复制 Base-Files (硬件配置与初始化脚本)..."
+        mkdir -p target/linux/mediatek/filogic/base-files
+        cp -rf "$GL_TMP_DIR"/target/linux/mediatek/filogic/base-files/* target/linux/mediatek/filogic/base-files/ 2>/dev/null || true
+
+        echo "3. 检查并注入 filogic.mk 设备定义..."
+        if ! grep -q "glinet_gl-mt5000" target/linux/mediatek/image/filogic.mk 2>/dev/null; then
+            sed -n '/define Device\/glinet_gl-mt5000/,/endef/p' "$GL_TMP_DIR"/target/linux/mediatek/image/filogic.mk >> target/linux/mediatek/image/filogic.mk
+            echo "Device/glinet_gl-mt5000 已追加到 filogic.mk"
+        else
+            echo "filogic.mk 中已存在 glinet_gl-mt5000 定义，跳过追加"
+        fi
+
+        rm -rf "$GL_TMP_DIR"
+        echo "GL-MT5000 板级支持导入成功！"
+    else
+        echo "警告: 克隆 GL.iNet MT5000 分支失败，请检查网络或仓库地址！"
+    fi
+
+    # 默认 IP 设置
     set_default_ip "192.168.100.1" "mt5000-immortalwrt"
 
 else
