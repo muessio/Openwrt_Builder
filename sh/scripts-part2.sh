@@ -167,9 +167,27 @@ flatten_feed_layout_repos() {
     echo "已展开: package/custom/vlmcsd + package/custom/luci-app-vlmcsd"
 }
 
-patch_rust_makefile
-reset_custom_package_dir
-remove_conflicting_makefiles
-clone_custom_repos
-flatten_feed_layout_repos
-verify_turboacc_makefile
+# =================================================================
+# 根据 WORKFLOW_NAME 决定是否拉取第三方包
+# =================================================================
+
+echo "--- DIY Part 2 脚本开始执行 ---"
+echo "WORKFLOW_NAME: $WORKFLOW_NAME"
+
+if [[ "$WORKFLOW_NAME" == "gl-mt5000_immortalwrt" ]]; then
+    echo ">>> 检测到设备: $WORKFLOW_NAME (ImmortalWrt) <<<"
+    echo "ImmortalWrt 自带丰富的插件库。为了测试基础固件的编译成功率，"
+    echo "暂时跳过所有第三方自定义包的克隆和 Makefile 删除操作。"
+    # 如果将来需要针对 ImmortalWrt 单独加包，写在这里
+    
+else
+    echo ">>> 执行常规 OpenWrt / GL.iNet 的包拉取逻辑 <<<"
+    patch_rust_makefile
+    reset_custom_package_dir
+    remove_conflicting_makefiles
+    clone_custom_repos
+    flatten_feed_layout_repos
+    verify_turboacc_makefile
+fi
+
+echo "--- DIY Part 2 脚本执行完毕 ---"
