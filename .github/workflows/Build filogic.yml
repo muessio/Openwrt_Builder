@@ -1,4 +1,4 @@
-name: Build filogic
+name: Build OpenWrt Brume 3 (GL-MT5000)
 
 on:
   schedule:
