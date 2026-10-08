@@ -27,6 +27,7 @@ env:
   UPLOAD_FIRMWARE: true
   UPLOAD_RELEASE: true
   TZ: Asia/Shanghai
+  GOTOOLCHAIN: auto   # <--- 1. Global für den gesamten Workflow hinzugefügt
 
 jobs:
   build:
@@ -198,6 +199,8 @@ jobs:
 
     - name: 编译固件
       id: compile
+      env:
+        GOTOOLCHAIN: auto   # <--- 2. Explizit auch für den Kompilier-Schritt gesetzt
       run: |
         cd openwrt
         echo -e "$(nproc) 线程编译"
