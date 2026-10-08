@@ -228,7 +228,7 @@ jobs:
       uses: actions/upload-artifact@main
       if: steps.compile.outputs.compile == 'success' && env.UPLOAD_BIN_DIR == 'true'
       with:
-        name: OpenWrt_bin_${{ steps.compile.outputs.device-name }}_${{ steps.compile.outputs.file-date }}
+        name: OpenWrt_bin_${{ steps.compile.outputs.device-name }}-${{ steps.compile.outputs.file-date }}
         path: openwrt/bin
 
     - name: Release firmware
