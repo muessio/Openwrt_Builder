@@ -111,30 +111,6 @@ jobs:
         echo "::endgroup::"
         echo "OPENWRT_PATH=$PWD" >> $GITHUB_ENV
 
-    - name: Patch GL-MT5000 Target & Drivers
-      run: |
-        echo "::group::Import GL-MT5000 DTS and Board Definitions"
-        git clone --depth 1 -b mt5000 https://github.com/GLiNet-Tech/openwrt.git /tmp/glinet-src
-        
-        # 1. Device Tree Source kopieren
-        mkdir -p openwrt/target/linux/mediatek/dts
-        mkdir -p openwrt/target/linux/mediatek/files/arch/arm64/boot/dts/mediatek
-        cp -f /tmp/glinet-src/target/linux/mediatek/dts/*gl-mt5000* openwrt/target/linux/mediatek/dts/ 2>/dev/null || true
-        cp -f /tmp/glinet-src/target/linux/mediatek/files/arch/arm64/boot/dts/mediatek/*gl-mt5000* openwrt/target/linux/mediatek/files/arch/arm64/boot/dts/mediatek/ 2>/dev/null || true
-        
-        # 2. Base Files & Hardware Support kopieren
-        mkdir -p openwrt/target/linux/mediatek/filogic/base-files
-        cp -rf /tmp/glinet-src/target/linux/mediatek/filogic/base-files/* openwrt/target/linux/mediatek/filogic/base-files/ 2>/dev/null || true
-        
-        # 3. Profil-Definition für GL-MT5000 in filogic.mk injizieren falls fehlend
-        if ! grep -q "glinet_gl-mt5000" openwrt/target/linux/mediatek/image/filogic.mk; then
-          sed -n '/define Device\/glinet_gl-mt5000/,/endef/p' /tmp/glinet-src/target/linux/mediatek/image/filogic.mk >> openwrt/target/linux/mediatek/image/filogic.mk
-        fi
-        
-        rm -rf /tmp/glinet-src
-        echo "Import abgeschlossen."
-        echo "::endgroup::"
-
     - name: 加载自定义源
       run: |
         [ -e $FEEDS_CONF ] && mv $FEEDS_CONF openwrt/feeds.conf.default
