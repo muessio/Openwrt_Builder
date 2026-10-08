@@ -1,55 +1,59 @@
-# OpenWrt Builder
+OpenWrt & ImmortalWrt Builder
+This is a GitHub Actions-based firmware build repository for the GL-MT5000 (Brume 3), specifically designed to automatically pull source code, integrate custom packages and optimizations, and build and publish clean firmware images for both OpenWrt and ImmortalWrt.
 
-这是一个基于 GitHub Actions 的 OpenWrt/ImmortalWrt 固件构建仓库，主要用于按设备配置自动拉取源码、注入自定义包、应用默认设置并产出固件。
+Supported Firmware Variants & Devices
+GL-MT5000 (Brume 3) – Default IP: 192.168.100.1
 
-## 支持设备
+OpenWrt (via Build filogic.yml)
 
-- GL.iNet AXT-1800，默认 IP：`192.168.8.1`
-- JDC-AX6600，默认 IP：`192.168.100.1`
-- GL-MT5000，默认 IP：`192.168.100.1`
-- GL-MT3600BE，默认 IP：`192.168.9.1`
-- Tenda BE12 Pro
-- TR-3000，默认 IP：`192.168.6.1`
-- x86 ImmortalWrt，默认 IP：`192.168.100.1`
+ImmortalWrt (via Build immortalwrt.yml)
 
-## 目录结构
+Directory Structure
+.github/workflows/: Contains the automated build and release pipelines for OpenWrt and ImmortalWrt.
 
-- `.github/workflows/`：GitHub Actions 构建与发布入口；`_openwrt-build-device.yml` 是 IPQ/filogic 共享的可复用长构建流程。
-- `.github/actions/`：发布阶段使用的本地 composite actions。
-- `config/`：各设备的 OpenWrt `.config` 配置片段。
-- `sh/scripts-part1.sh`：feeds 更新前执行的设备特定源码修改。
-- `sh/scripts-part2.sh`：feeds 安装后执行的自定义包注入与冲突包清理。
-- `default-settings-m0eak/`：自定义默认设置包。
-- `files/`：OpenWrt rootfs overlay，会被复制到构建树的 `openwrt/files`。
+.github/actions/: Local composite actions used during the release and upload phases.
 
-## 构建流程
+config/: Contains the device-specific .config file for the GL-MT5000 (mt5000.config).
 
-1. GitHub Actions 根据 workflow matrix 选择设备和配置文件。
-2. 克隆对应 OpenWrt/ImmortalWrt 源码。
-3. 执行 `sh/scripts-part1.sh`，处理源码级补丁、默认 IP 等前置修改。
-4. 更新并安装 feeds。
-5. 注入 `default-settings-m0eak`、`files/` 和设备 `.config`。
-6. 执行 `sh/scripts-part2.sh`，清理冲突 Makefile 并克隆第三方自定义包。
-7. `make defconfig`、下载依赖、编译固件并上传产物。
+sh/scripts-part1.sh: Device-specific source code modifications executed before feed updates.
 
+sh/scripts-part2.sh: Custom scripts executed after feed installation to inject custom packages and handle dependencies.
 
-## 本地检查
+default-settings-m0eak/: Custom default settings package for your personal configurations.
 
-在有 Bash 的环境中，可以先做脚本语法检查：
+files/: Rootfs overlay copied directly into the build tree (openwrt/files).
 
-```bash
+Build Workflow
+Trigger the respective workflow (OpenWrt or ImmortalWrt) via GitHub Actions (manually or scheduled).
+
+Clone the corresponding source code base (OpenWrt or ImmortalWrt).
+
+Execute sh/scripts-part1.sh for source code preparations and patches.
+
+Update and install package feeds.
+
+Inject default-settings-m0eak, the files/ folder, and mt5000.config.
+
+Execute sh/scripts-part2.sh to add further individual packages.
+
+Compile (make defconfig, download dependencies, execute build) and automatically upload the finished artifacts and releases.
+
+Local Verification
+In a Bash environment, you can perform a syntax check on the scripts beforehand:
+
+Bash
 bash -n sh/scripts-part1.sh
 bash -n sh/scripts-part2.sh
-```
+Due to resource requirements, actual firmware compilation should be executed directly within GitHub Actions.
 
-完整固件构建建议在 GitHub Actions 中验证。
+Acknowledgments
+m0eak (for the excellent base structure and OpenWrt Builder template)
 
-## 致谢
+P3TERX/Actions-OpenWrt
 
-- [P3TERX/Actions-OpenWrt](https://github.com/P3TERX/Actions-OpenWrt)
-- [OpenWrt](https://github.com/openwrt/openwrt)
-- [ImmortalWrt](https://github.com/immortalwrt/immortalwrt)
+OpenWrt Project
 
-## License
+ImmortalWrt Project
 
-[MIT](LICENSE)
+License
+MIT
