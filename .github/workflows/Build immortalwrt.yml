@@ -25,7 +25,7 @@ env:
   UPLOAD_BIN_DIR: true
   UPLOAD_FIRMWARE: true
   UPLOAD_RELEASE: true
-  TZ: Asia/Shanghai
+  TZ: Europe/Berlin
   GOTOOLCHAIN: auto
 
 jobs:
@@ -111,9 +111,19 @@ jobs:
         cp -f /tmp/glinet-src/target/linux/mediatek/dts/*gl-mt5000* target/linux/mediatek/dts/ 2>/dev/null || true
         cp -f /tmp/glinet-src/target/linux/mediatek/files/arch/arm64/boot/dts/mediatek/*gl-mt5000* target/linux/mediatek/files/arch/arm64/boot/dts/mediatek/ 2>/dev/null || true
         cp -rf /tmp/glinet-src/target/linux/mediatek/filogic/base-files/* target/linux/mediatek/filogic/base-files/ 2>/dev/null || true
-        if ! grep -q "glinet_gl-mt5000" target/linux/mediatek/image/filogic.mk; then
-          sed -n '/define Device\/glinet_gl-mt5000/,/endef/p' /tmp/glinet-src/target/linux/mediatek/image/filogic.mk >> target/linux/mediatek/image/filogic.mk
-        fi
+
+        # Durchsucht alle Makefiles im Image-Ordner und importiert den gesamten Geräteblock
+        for mk in /tmp/glinet-src/target/linux/mediatek/image/*.mk; do
+          if grep -q -i "mt5000" "$mk"; then
+            echo "Gefunden in $mk -> importiere nach filogic.mk"
+            sed -n '/define Device\/.*mt5000/,/endef/p' "$mk" >> target/linux/mediatek/image/filogic.mk
+          fi
+        done
+
+        # Sicherheits-Check: Sofortiger Abbruch bei Minute 1 falls nichts injiziert wurde
+        echo "=== Überprüfe injizierte Definition in filogic.mk ==="
+        grep -n -A 10 -i "Device/.*mt5000" target/linux/mediatek/image/filogic.mk || { echo "FEHLER: MT5000 Gerätedefinition wurde nicht gefunden!"; exit 1; }
+
         rm -rf /tmp/glinet-src
         rm -rf tmp
         echo "::endgroup::"
@@ -131,7 +141,6 @@ jobs:
         [ -f $DIY_P1_SH ] && chmod +x $DIY_P1_SH
         cd openwrt
 
-        # 禁用引发递归依赖冲突的源 (video / qt5 等)
         sed -i 's/.*video/#&/' feeds.conf.default || true
 
         echo "::group::Feeds configuration"
