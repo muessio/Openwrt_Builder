@@ -1,9 +1,7 @@
 name: Build OpenWrt Brume 3 (GL-MT5000)
 
 on:
-  schedule:
-    - cron: '0 2 */4 * *'
-  workflow_dispatch:
+ workflow_dispatch:
     inputs:
       docker:
         description: '是否编译 docker'
