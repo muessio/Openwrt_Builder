@@ -27,7 +27,7 @@ env:
   UPLOAD_FIRMWARE: true
   UPLOAD_RELEASE: true
   TZ: Asia/Shanghai
-  GOTOOLCHAIN: auto   # <--- 1. Global für den gesamten Workflow hinzugefügt
+  GOTOOLCHAIN: auto
 
 jobs:
   build:
@@ -40,8 +40,8 @@ jobs:
           - device: GL-MT5000
             repo_url: https://github.com/immortalwrt/immortalwrt.git
             repo_branch: main
-            config_file: ./config/mt5000.config
-            workflow_name: GL-MT5000
+            config_file: ./config/immortalwrt.config
+            workflow_name: gl-mt5000_immortalwrt
             sonic_fullcone: "true"
 
     steps:
@@ -92,7 +92,11 @@ jobs:
           sudo mkdir -p /workdir
           sudo chown $USER:$GROUPS /workdir
           echo "WORKFLOW_NAME=${{ matrix.workflow_name }}" >> $GITHUB_ENV
-          echo "TAG2=${{ github.event.inputs.tag2 }}" | tr ' ' '_' >> $GITHUB_ENV
+          INPUT_TAG2="${{ github.event.inputs.tag2 }}"
+          if [ -z "$INPUT_TAG2" ]; then
+            INPUT_TAG2="main"
+          fi
+          echo "TAG2=$INPUT_TAG2" | tr ' ' '_' >> $GITHUB_ENV
 
     - name: 克隆源代码
       working-directory: /workdir
@@ -172,9 +176,7 @@ jobs:
         else
           echo "缓存未命中，开始主动清理相关的旧缓存..."
           rm -rf openwrt/dl/go-mod-cache
-          CACHE_PREFIX="${{ runner.os }}-${{ github.workflow }}-${{ matrix.device }}-${{ env.TAG2 }}-$"
-          echo "正在搜索旧缓存..."
-          CACHE_LIST=$(gh cache list --key "${{ runner.os }}-${{ github.workflow }}-${{ matrix.device }}-${{ env.TAG2 }}" | cut -f 1)
+          CACHE_LIST=$(gh cache list --key "${{ runner.os }}-${{ github.workflow }}-${{ matrix.device }}-${{ env.TAG2 }}" | cut -f 1 || true)
           if [ -n "$CACHE_LIST" ]; then
             for CACHE_KEY in $CACHE_LIST; do
               echo "删除旧缓存: $CACHE_KEY"
@@ -200,7 +202,7 @@ jobs:
     - name: 编译固件
       id: compile
       env:
-        GOTOOLCHAIN: auto   # <--- 2. Explizit auch für den Kompilier-Schritt gesetzt
+        GOTOOLCHAIN: auto
       run: |
         cd openwrt
         echo -e "$(nproc) 线程编译"
