@@ -109,6 +109,13 @@ elif [[ "$WORKFLOW_NAME" == "GL-MT5000" ]]; then
     # 源码: GLiNet-Tech/openwrt @ mt5000 (OpenWrt main 6.18, RTL8366UB DSA 驱动已内置内核)
     set_default_ip "192.168.100.1" "mt5000"
 
+# --- 逻辑块 6: 处理 gl-mt5000_immortalwrt ---
+elif [[ "$WORKFLOW_NAME" == "gl-mt5000_immortalwrt" ]]; then
+    echo ">>> 检测到设备: $WORKFLOW_NAME。开始执行 ImmortalWrt MT5000 测试配置"
+    
+    # Wir setzen nur die IP und testen, ob das Image im master-Zweig nativ baut
+    set_default_ip "192.168.100.1" "mt5000-immortalwrt"
+
 else
     echo ">>> 未匹配到任何已知的 WORKFLOW_NAME ('$WORKFLOW_NAME')。跳过所有设备特定的修改"
 fi
