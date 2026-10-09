@@ -183,12 +183,12 @@ if [[ "$WORKFLOW_NAME" == "gl-mt5000_immortalwrt" ]]; then
         echo "Patche 02_network fuer glinet,gl-mt5000..."
         sed -i '/glinet,gl-mt6000)/i \
 glinet,gl-mt5000)\
-\tucidef_set_interfaces_lan_wan "lan1 lan2" "wan"\
+\tucidef_set_interfaces_lan_wan "lan1 lan2" "eth1"\
 \t;;' "$NETWORK_SETUP"
     fi
 
-    # 2. Statische Fallback-Netzwerkkonfiguration direkt in RootFS injizieren
-    echo "Erstelle statische network-Konfiguration mit 192.168.100.1..."
+    # 2. Statische Fallback-Netzwerkkonfiguration direkt in RootFS injizieren (inkl. WAN Rescue)
+    echo "Erstelle statische network-Konfiguration (LAN: 192.168.100.1, WAN-Rescue: 192.168.10.1)..."
     mkdir -p package/base-files/files/etc/config
     cat << 'EOF' > package/base-files/files/etc/config/network
 config interface 'loopback'
@@ -208,20 +208,44 @@ config interface 'lan'
 	option proto 'static'
 	option ipaddr '192.168.100.1'
 	option netmask '255.255.255.0'
+
+config interface 'wan'
+	option device 'eth1'
+	option proto 'static'
+	option ipaddr '192.168.100.1'
+	option netmask '255.255.255.0'
 EOF
 
-    # 3. Realtek DSA Switch Treiber aktivieren
+    # 3. Realtek DSA Switch Treiber aktivieren (RTL8366UB + Tagging)
     echo "Aktiviere Realtek DSA Switch Module in .config..."
     echo "CONFIG_PACKAGE_kmod-dsa-realtek=y" >> .config
     echo "CONFIG_PACKAGE_kmod-dsa-realtek-rtl8366rb=y" >> .config
+    echo "CONFIG_PACKAGE_kmod-dsa-realtek-rtl8366ub=y" >> .config
     echo "CONFIG_PACKAGE_kmod-dsa-realtek-smi=y" >> .config
+    echo "CONFIG_PACKAGE_kmod-dsa-realtek-mdio=y" >> .config
+    echo "CONFIG_PACKAGE_kmod-dsa-tag-rtl4-a=y" >> .config
 
-    # 4. Footstrap LuCI Theme aktivieren
+    # 4. WAN-Rescue Firewall Regel hinterlegen
+    mkdir -p package/base-files/files/etc/uci-defaults/
+    cat << 'EOF' > package/base-files/files/etc/uci-defaults/99-gl-mt5000-wan-rescue
+uci -q batch << 'UCIBATCH'
+set firewall.wan_rescue=rule
+set firewall.wan_rescue.name='Allow-WAN-Access-Rescue'
+set firewall.wan_rescue.src='wan'
+set firewall.wan_rescue.proto='tcp'
+set firewall.wan_rescue.dest_port='22 80 443'
+set firewall.wan_rescue.target='ACCEPT'
+commit firewall
+UCIBATCH
+exit 0
+EOF
+    chmod +x package/base-files/files/etc/uci-defaults/99-gl-mt5000-wan-rescue
+
+    # 5. Footstrap LuCI Theme aktivieren
     echo "Aktiviere Footstrap Theme in .config..."
     echo "CONFIG_PACKAGE_luci-theme-footstrap=y" >> .config
 
-    # 5. Standard-Theme auf Footstrap vorkonfigurieren
-    mkdir -p package/base-files/files/etc/uci-defaults/
+    # 6. Standard-Theme auf Footstrap vorkonfigurieren
     cat << 'EOF' > package/base-files/files/etc/uci-defaults/99-default-theme-footstrap
 uci set luci.main.mediaurlbase='/luci-static/footstrap'
 uci commit luci
