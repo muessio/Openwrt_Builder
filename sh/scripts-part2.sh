@@ -6,7 +6,7 @@
 # See /LICENSE for more information.
 #
 # https://github.com/P3TERX/Actions-OpenWrt
-# File name: diy-part2.sh
+# File name: scripts-part2.sh
 # Description: OpenWrt DIY script part 2 (After Update feeds)
 #
 
@@ -166,7 +166,7 @@ flatten_feed_layout_repos() {
 }
 
 # =================================================================
-# 根据 WORKFLOW_NAME 决定是否拉取第三方包
+# 根据 WORKFLOW_NAME 决定执行逻辑
 # =================================================================
 
 echo "--- DIY Part 2 脚本开始执行 ---"
@@ -200,9 +200,6 @@ config interface 'loopback'
 config device
 	option name 'br-lan'
 	option type 'bridge'
-	list ports 'eth0'
-	list ports 'eth1'
-	list ports 'lan'
 	list ports 'lan1'
 	list ports 'lan2'
 
@@ -212,6 +209,25 @@ config interface 'lan'
 	option ipaddr '192.168.100.1'
 	option netmask '255.255.255.0'
 EOF
+
+    # 3. Realtek DSA Switch Treiber aktivieren
+    echo "Aktiviere Realtek DSA Switch Module in .config..."
+    echo "CONFIG_PACKAGE_kmod-dsa-realtek=y" >> .config
+    echo "CONFIG_PACKAGE_kmod-dsa-realtek-rtl8366rb=y" >> .config
+    echo "CONFIG_PACKAGE_kmod-dsa-realtek-smi=y" >> .config
+
+    # 4. Footstrap LuCI Theme aktivieren
+    echo "Aktiviere Footstrap Theme in .config..."
+    echo "CONFIG_PACKAGE_luci-theme-footstrap=y" >> .config
+
+    # 5. Standard-Theme auf Footstrap vorkonfigurieren
+    mkdir -p package/base-files/files/etc/uci-defaults/
+    cat << 'EOF' > package/base-files/files/etc/uci-defaults/99-default-theme-footstrap
+uci set luci.main.mediaurlbase='/luci-static/footstrap'
+uci commit luci
+exit 0
+EOF
+    chmod +x package/base-files/files/etc/uci-defaults/99-default-theme-footstrap
 
 else
     echo ">>> 执行常规 OpenWrt / GL.iNet 的包拉取逻辑 <<<"
