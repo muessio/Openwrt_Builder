@@ -41,43 +41,17 @@ jobs:
             repo_branch: master
             config_file: ./config/immortalwrt.config
             workflow_name: gl-mt5000_immortalwrt
-            sonic_fullcone: "true"
 
     steps:
     - name: Checkout
       uses: actions/checkout@main
 
-    - name: 显示调试上下文
-      run: |
-        echo "::group::Workflow inputs"
-        echo "docker=${{ github.event.inputs.docker }}"
-        echo "tag2=${{ github.event.inputs.tag2 }}"
-        echo "device=${{ matrix.device }}"
-        echo "config-file=${{ matrix.config_file }}"
-        echo "docker-config=$CONFIG_FILE_DOCKER"
-        echo "feeds-conf=$FEEDS_CONF"
-        echo "diy-p1-sh=$DIY_P1_SH"
-        echo "diy-p2-sh=$DIY_P2_SH"
-        echo "default-setting=$DEFAULT_SETTING"
-        for path in "${{ matrix.config_file }}" "$CONFIG_FILE_DOCKER" "$FEEDS_CONF" "$DIY_P1_SH" "$DIY_P2_SH" "$DEFAULT_SETTING" "files"; do
-          if [ -e "$path" ]; then
-            echo "exists: $path"
-          else
-            echo "missing: $path"
-          fi
-        done
-        echo "::endgroup::"
-
     - name: 释放磁盘空间
       run: |
-        echo "::group::Disk cleanup"
-        echo "清理前磁盘空间："
         df -hT
         sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
         sudo docker image prune --all --force
-        echo "清理后磁盘空间："
         df -hT
-        echo "::endgroup::"
 
     - name: 初始化环境
       env:
@@ -92,87 +66,22 @@ jobs:
         sudo chown $USER:$GROUPS /workdir
         echo "WORKFLOW_NAME=${{ matrix.workflow_name }}" >> $GITHUB_ENV
         INPUT_TAG2="${{ github.event.inputs.tag2 }}"
-        if [ -z "$INPUT_TAG2" ]; then
-          INPUT_TAG2="master"
-        fi
+        [ -z "$INPUT_TAG2" ] && INPUT_TAG2="master"
         echo "TAG2=$INPUT_TAG2" | tr ' ' '_' >> $GITHUB_ENV
 
     - name: 克隆源代码
       working-directory: /workdir
       run: |
-        df -hT $PWD
         git clone ${{ matrix.repo_url }} --single-branch -b ${{ matrix.repo_branch }} openwrt
         ln -sf /workdir/openwrt $GITHUB_WORKSPACE/openwrt
-        cd openwrt
-
-        echo "::group::Import GL-MT5000 Support"
-        git clone --depth 1 -b mt5000 https://github.com/GLiNet-Tech/openwrt.git /tmp/glinet-src
-        mkdir -p target/linux/mediatek/dts target/linux/mediatek/files/arch/arm64/boot/dts/mediatek target/linux/mediatek/filogic/base-files
-        cp -f /tmp/glinet-src/target/linux/mediatek/dts/*gl-mt5000* target/linux/mediatek/dts/ 2>/dev/null || true
-        cp -f /tmp/glinet-src/target/linux/mediatek/files/arch/arm64/boot/dts/mediatek/*gl-mt5000* target/linux/mediatek/files/arch/arm64/boot/dts/mediatek/ 2>/dev/null || true
-        cp -rf /tmp/glinet-src/target/linux/mediatek/filogic/base-files/* target/linux/mediatek/filogic/base-files/ 2>/dev/null || true
-
-        echo "Kopiere Realtek Switch Kernel-Patches..."
-        for pdir in target/linux/mediatek/patches-*; do
-          if [ -d "$pdir" ]; then
-            cp -f /tmp/glinet-src/target/linux/mediatek/patches-*/*rtl8366* "$pdir"/ 2>/dev/null || true
-            cp -f /tmp/glinet-src/target/linux/mediatek/patches-*/*realtek* "$pdir"/ 2>/dev/null || true
-          fi
-        done
-
-        echo "Erweitere Target-Kernel-Configs fuer RTL8366UB DSA..."
-        for cfg in target/linux/mediatek/filogic/config-*; do
-          if [ -f "$cfg" ]; then
-            echo "CONFIG_NET_DSA=y" >> "$cfg"
-            echo "CONFIG_NET_DSA_REALTEK=y" >> "$cfg"
-            echo "CONFIG_NET_DSA_REALTEK_RTL8366RB=y" >> "$cfg"
-            echo "CONFIG_NET_DSA_REALTEK_RTL8366UB=y" >> "$cfg"
-            echo "CONFIG_NET_DSA_REALTEK_SMI=y" >> "$cfg"
-            echo "CONFIG_NET_DSA_REALTEK_MDIO=y" >> "$cfg"
-            echo "CONFIG_NET_DSA_TAG_RTL4_A=y" >> "$cfg"
-            echo "CONFIG_NET_DSA_TAG_NONE=y" >> "$cfg"
-          fi
-        done
-
-        for mk in /tmp/glinet-src/target/linux/mediatek/image/*.mk; do
-          if grep -q -i "mt5000" "$mk"; then
-            echo "Gefunden in $mk -> importiere nach filogic.mk"
-            sed -n '/define Device\/glinet_gl-mt5000/,/endef/p' "$mk" >> target/linux/mediatek/image/filogic.mk
-            echo '$(eval $(call BuildImage,glinet_gl-mt5000))' >> target/linux/mediatek/image/filogic.mk
-            echo 'TARGET_DEVICES += glinet_gl-mt5000' >> target/linux/mediatek/image/filogic.mk
-          fi
-        done
-
-        echo "=== Überprüfe injizierte Definition in filogic.mk ==="
-        grep -n -A 15 -i "Device/glinet_gl-mt5000" target/linux/mediatek/image/filogic.mk || { echo "FEHLER: MT5000 Gerätedefinition wurde nicht gefunden!"; exit 1; }
-
-        rm -rf /tmp/glinet-src
-        rm -rf tmp
-        echo "::endgroup::"
-
-        echo "::group::OpenWrt source revision"
-        git log -1 --oneline
-        git remote -v
-        git status --short
-        echo "::endgroup::"
-        echo "OPENWRT_PATH=$PWD" >> $GITHUB_ENV
 
     - name: 加载自定义源
       run: |
         [ -e $FEEDS_CONF ] && mv $FEEDS_CONF openwrt/feeds.conf.default
         [ -f $DIY_P1_SH ] && chmod +x $DIY_P1_SH
         cd openwrt
-
         sed -i 's/.*video/#&/' feeds.conf.default || true
-
         [ -f $GITHUB_WORKSPACE/$DIY_P1_SH ] && $GITHUB_WORKSPACE/$DIY_P1_SH || true
-
-        echo "::group::Feeds configuration"
-        pwd
-        ls -l feeds.conf.default || true
-        sed -n '1,80p' feeds.conf.default || true
-        echo "::endgroup::"
-
         ./scripts/feeds update -a
 
     - name: 安装源
@@ -187,109 +96,53 @@ jobs:
           cat $CONFIG_FILE_DOCKER >> openwrt/.config
         fi
 
-        sed -i '/CONFIG_PACKAGE_squeezelite/d' openwrt/.config 2>/dev/null || true
-        echo "# CONFIG_PACKAGE_squeezelite-custom is not set" >> openwrt/.config
-
         [ -f $DIY_P2_SH ] && chmod +x $DIY_P2_SH
         cd openwrt
-        echo "::group::Pre-defconfig workspace snapshot"
-        pwd
-        ls -ld package/default-settings-m0eak files .config 2>/dev/null || true
-        grep -E '^(CONFIG_TARGET|CONFIG_PACKAGE_(docker|dockerd|luci-app-dockerman|containerd|runc))' .config || true
-        echo "::endgroup::"
-
         [ -f $GITHUB_WORKSPACE/$DIY_P2_SH ] && $GITHUB_WORKSPACE/$DIY_P2_SH || true
 
-        make defconfig
+        # Kernel-Config zwingend nach Target-Setup mit Realtek DSA-Optionen absichern
+        for cfg in target/linux/mediatek/filogic/config-* target/linux/mediatek/config-*; do
+          if [ -f "$cfg" ]; then
+            cat << 'EOF' >> "$cfg"
+CONFIG_NET_DSA=y
+CONFIG_NET_DSA_TAG_RTL4_A=y
+CONFIG_NET_DSA_TAG_NONE=y
+CONFIG_NET_DSA_REALTEK=y
+CONFIG_NET_DSA_REALTEK_RTL8366RB=y
+CONFIG_NET_DSA_REALTEK_RTL8366UB=y
+CONFIG_NET_DSA_REALTEK_SMI=y
+CONFIG_NET_DSA_REALTEK_MDIO=y
+CONFIG_FIXED_PHY=y
+EOF
+          fi
+        done
 
-        echo "::group::当前 diffconfig"
-        ./scripts/diffconfig.sh
-        echo "::endgroup::"
+        make defconfig
 
         echo "=== Überprüfe gewähltes Target ==="
         grep "^CONFIG_TARGET_mediatek_filogic_DEVICE_glinet_gl-mt5000=y" .config || {
           echo "FEHLER: Build-System hat gl-mt5000 verworfen!"
-          echo "Aktuell ausgewähltes Target:"
-          grep "^CONFIG_TARGET_mediatek_filogic_DEVICE_" .config
           exit 1
         }
-
-    - name: 检查并恢复缓存
-      id: check-cache
-      uses: actions/cache@v4
-      with:
-        key: ${{ runner.os }}-${{ github.workflow }}-${{ matrix.device }}-${{ env.TAG2 }}-${{ hashFiles('openwrt/.config', 'openwrt/feeds.conf.default', '**/scripts-part*.sh') }}
-        restore-keys: |
-          ${{ runner.os }}-${{ github.workflow }}-${{ matrix.device }}-${{ env.TAG2 }}-
-        path: |
-          openwrt/.ccache
-          openwrt/staging_dir/host*
-          openwrt/staging_dir/tool*
-
-    - name: 更新缓存并处理时间戳
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      run: |
-        echo "cache-hit=${{ steps.check-cache.outputs.cache-hit }}"
-        if [ "${{ steps.check-cache.outputs.cache-hit }}" == "true" ]; then
-          echo "缓存命中，更新时间戳..."
-          cd openwrt
-          find staging_dir -type d -name "stamp" -not -path "*target*" | while read -r DIR; do
-            find "$DIR" -type f -exec touch {} +
-          done
-          echo "时间戳更新完毕!"
-        else
-          echo "缓存未命中，开始主动清理相关的旧缓存..."
-          rm -rf openwrt/dl/go-mod-cache
-          CACHE_LIST=$(gh cache list --key "${{ runner.os }}-${{ github.workflow }}-${{ matrix.device }}-${{ env.TAG2 }}" | cut -f 1 || true)
-          if [ -n "$CACHE_LIST" ]; then
-            for CACHE_KEY in $CACHE_LIST; do
-              echo "删除旧缓存: $CACHE_KEY"
-              gh cache delete "$CACHE_KEY" || true
-            done
-            echo "相关旧缓存清理完毕!"
-          else
-            echo "没有找到相关的旧缓存。"
-          fi
-        fi
 
     - name: 下载软件包
       id: package
       run: |
         cd openwrt
         make download -j8
-        echo "::group::Download directory summary"
-        du -sh dl || true
-        find dl -size -1024c -exec ls -l {} \;
-        echo "::endgroup::"
         find dl -size -1024c -exec rm -f {} \;
 
     - name: 编译固件
       id: compile
-      env:
-        GOTOOLCHAIN: auto
       run: |
         cd openwrt
         echo -e "$(nproc) 线程编译"
         make -j$(expr $(nproc) + 1) || make -j1 V=s
-        echo "compile-status=success" >> $GITHUB_ENV
         grep '^CONFIG_TARGET.*DEVICE.*=y' .config | sed -r 's/.*DEVICE_(.*)=y/\1/' > DEVICE_NAME
-        [ -s DEVICE_NAME ] && echo "DEVICE_NAME=_$(cat DEVICE_NAME)" >> $GITHUB_ENV
         echo "FILE_DATE=_$(date +"%Y%m%d%H%M")" >> $GITHUB_ENV
         echo "compile=success" >> $GITHUB_OUTPUT
-        if [ -s DEVICE_NAME ]; then
-          echo "device-name=$(cat DEVICE_NAME)" >> $GITHUB_OUTPUT
-        fi
+        echo "device-name=$(cat DEVICE_NAME)" >> $GITHUB_OUTPUT
         echo "file-date=$(date +"%Y%m%d%H%M")" >> $GITHUB_OUTPUT
-        echo "::group::Compile outputs"
-        echo "device-name=$(cat DEVICE_NAME 2>/dev/null || true)"
-        echo "file-date=$(date +"%Y%m%d%H%M")"
-        find bin/targets -maxdepth 3 -type f -printf '%p %s bytes\n' | sort || true
-        echo "::endgroup::"
-
-    - name: 检查空间使用情况
-      if: (!cancelled())
-      run: df -hT
 
     - name: 上传 bin 目录
       uses: actions/upload-artifact@main
@@ -305,12 +158,9 @@ jobs:
         name: ImmortalWrt Brume 3 (GL-MT5000) ${{ steps.compile.outputs.file-date }}
         tag_name: ImmortalWrt_GL-MT5000_${{ steps.compile.outputs.file-date }}
         body: |
-          Offizieller ImmortalWrt Build mit gepatchtem GL.iNet MT5000 Target-Support.
-          Basis: ${{ matrix.repo_url }} (${{ matrix.repo_branch }})
-          Datum: ${{ steps.compile.outputs.file-date }}
+          ImmortalWrt Build für GL.iNet MT5000 mit integriertem RTL8366UB DSA-Treiber und USB-Storage Support.
         files: |
           openwrt/bin/targets/*/*/*sysupgrade*
           openwrt/bin/targets/*/*/*factory*
-          openwrt/bin/targets/*/*/*initramfs*
           openwrt/bin/targets/*/*/*manifest*
           openwrt/bin/targets/*/*/*sha256sums
