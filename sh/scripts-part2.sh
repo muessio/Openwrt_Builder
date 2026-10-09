@@ -37,7 +37,7 @@ declare -A REPOS=(
     ["https://github.com/Openwrt-Passwall/openwrt-passwall2"]=""
     ["https://github.com/Openwrt-Passwall/openwrt-passwall"]=""
     ["https://github.com/Openwrt-Passwall/openwrt-passwall-packages"]=""
-    # ["https://github.com/fw876/helloworld"]="v196.3"  # 移除：与 sbwml 的 luci-app-mosdns 内核冲突；代理依赖由 passwall-packages + sbwml 满足
+    # ["https://github.com/fw876/helloworld"]="v196.3"
     # ["https://github.com/immortalwrt/homeproxy"]=""
     ["https://github.com/10000ge10000/luci-app-openclaw"]=""
     ["https://github.com/Slava-Shchipunov/awg-openwrt"]=""
@@ -152,8 +152,6 @@ verify_turboacc_makefile() {
 }
 
 flatten_feed_layout_repos() {
-    # gaoderby/luci-app-kms 是 feed 布局 (package/network/vlmcsd + luci/applications/luci-app-vlmcsd)
-    # 直接放在 package/custom/ 下不会被扫描，需展开为独立包目录
     local feed_dir="$TARGET_DIR/luci-app-kms"
 
     if [ ! -d "$feed_dir" ]; then
@@ -178,8 +176,43 @@ if [[ "$WORKFLOW_NAME" == "gl-mt5000_immortalwrt" ]]; then
     echo ">>> 检测到设备: $WORKFLOW_NAME (ImmortalWrt) <<<"
     echo "ImmortalWrt 自带丰富的插件库。为了测试基础固件的编译成功率，"
     echo "暂时跳过所有第三方自定义包的克隆和 Makefile 删除操作。"
-    # 如果将来需要针对 ImmortalWrt 单独加包，写在这里
-    
+
+    # 1. DSA-Switch-Port-Zuweisung in 02_network patchen
+    NETWORK_SETUP="target/linux/mediatek/filogic/base-files/etc/board.d/02_network"
+    if [ -f "$NETWORK_SETUP" ]; then
+        echo "Patche 02_network fuer glinet,gl-mt5000..."
+        sed -i '/glinet,gl-mt6000)/i \
+glinet,gl-mt5000)\
+\tucidef_set_interfaces_lan_wan "lan1 lan2" "wan"\
+\t;;' "$NETWORK_SETUP"
+    fi
+
+    # 2. Statische Fallback-Netzwerkkonfiguration direkt in RootFS injizieren
+    echo "Erstelle statische network-Konfiguration mit 192.168.100.1..."
+    mkdir -p package/base-files/files/etc/config
+    cat << 'EOF' > package/base-files/files/etc/config/network
+config interface 'loopback'
+	option device 'lo'
+	option proto 'static'
+	option ipaddr '127.0.0.1'
+	option netmask '255.0.0.0'
+
+config device
+	option name 'br-lan'
+	option type 'bridge'
+	list ports 'eth0'
+	list ports 'eth1'
+	list ports 'lan'
+	list ports 'lan1'
+	list ports 'lan2'
+
+config interface 'lan'
+	option device 'br-lan'
+	option proto 'static'
+	option ipaddr '192.168.100.1'
+	option netmask '255.255.255.0'
+EOF
+
 else
     echo ">>> 执行常规 OpenWrt / GL.iNet 的包拉取逻辑 <<<"
     patch_rust_makefile
