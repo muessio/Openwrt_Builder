@@ -1,7 +1,6 @@
 name: Build immortalwrt
 
 on:
-  repository_dispatch:
   workflow_dispatch:
     inputs:
       docker:
@@ -135,7 +134,7 @@ EOF
         echo "file-date=$(date +"%Y%m%d%H%M")" >> $GITHUB_OUTPUT
 
     - name: 上传 bin 目录
-      uses: actions/upload-artifact@main
+      uses: actions/upload-artifact@v4
       if: steps.compile.outputs.compile == 'success' && env.UPLOAD_BIN_DIR == 'true'
       with:
         name: ImmortalWrt_bin_${{ steps.compile.outputs.device-name }}-${{ steps.compile.outputs.file-date }}
