@@ -129,12 +129,15 @@ elif [[ "$WORKFLOW_NAME" == "gl-mt5000_immortalwrt" ]]; then
         cp -f "$GL_TMP_DIR"/target/linux/mediatek/patches-*/*rtl8366* target/linux/mediatek/patches-6.18/ 2>/dev/null || true
         cp -f "$GL_TMP_DIR"/target/linux/mediatek/patches-*/*realtek* target/linux/mediatek/patches-6.18/ 2>/dev/null || true
 
-        echo "5. Kernel-Konfiguration um Realtek DSA und RTL8366 erweitern..."
+        echo "5. Kernel-Konfiguration um Realtek DSA und RTL8366UB erweitern..."
         for cfg in target/linux/mediatek/filogic/config-*; do
             if [ -f "$cfg" ]; then
+                echo "CONFIG_NET_DSA=y" >> "$cfg"
                 echo "CONFIG_NET_DSA_REALTEK=y" >> "$cfg"
                 echo "CONFIG_NET_DSA_REALTEK_RTL8366RB=y" >> "$cfg"
+                echo "CONFIG_NET_DSA_REALTEK_RTL8366UB=y" >> "$cfg"
                 echo "CONFIG_NET_DSA_REALTEK_SMI=y" >> "$cfg"
+                echo "CONFIG_NET_DSA_REALTEK_MDIO=y" >> "$cfg"
                 echo "CONFIG_NET_DSA_TAG_RTL4_A=y" >> "$cfg"
                 echo "CONFIG_NET_DSA_TAG_NONE=y" >> "$cfg"
             fi
