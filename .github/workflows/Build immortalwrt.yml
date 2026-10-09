@@ -145,13 +145,16 @@ jobs:
 
         sed -i 's/.*video/#&/' feeds.conf.default || true
 
+        # DIY_P1_SH ZUERST ausführen, damit feeds.conf.default erweitert wird (z. B. Footstrap Theme Feed)
+        [ -f $GITHUB_WORKSPACE/$DIY_P1_SH ] && $GITHUB_WORKSPACE/$DIY_P1_SH || true
+
         echo "::group::Feeds configuration"
         pwd
         ls -l feeds.conf.default || true
         sed -n '1,80p' feeds.conf.default || true
         echo "::endgroup::"
+
         ./scripts/feeds update -a
-        [ -f $GITHUB_WORKSPACE/$DIY_P1_SH ] && $GITHUB_WORKSPACE/$DIY_P1_SH || true
 
     - name: 安装源
       run: cd openwrt && ./scripts/feeds install -a
@@ -176,8 +179,10 @@ jobs:
         ls -ld package/default-settings-m0eak files .config 2>/dev/null || true
         grep -E '^(CONFIG_TARGET|CONFIG_PACKAGE_(docker|dockerd|luci-app-dockerman|containerd|runc))' .config || true
         echo "::endgroup::"
+
+        # DIY_P2_SH vor defconfig ausführen, um kmod-dsa-realtek und Theme in .config zu schreiben
         [ -f $GITHUB_WORKSPACE/$DIY_P2_SH ] && $GITHUB_WORKSPACE/$DIY_P2_SH || true
-        
+
         # Generiert die finale Konfiguration
         make defconfig
 
