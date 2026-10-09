@@ -112,7 +112,28 @@ jobs:
         cp -f /tmp/glinet-src/target/linux/mediatek/files/arch/arm64/boot/dts/mediatek/*gl-mt5000* target/linux/mediatek/files/arch/arm64/boot/dts/mediatek/ 2>/dev/null || true
         cp -rf /tmp/glinet-src/target/linux/mediatek/filogic/base-files/* target/linux/mediatek/filogic/base-files/ 2>/dev/null || true
 
-        # Importiert die Gerätedefinition und registriert sie zwingend im Image-Builder
+        echo "Kopiere Realtek Switch Kernel-Patches..."
+        for pdir in target/linux/mediatek/patches-*; do
+          if [ -d "$pdir" ]; then
+            cp -f /tmp/glinet-src/target/linux/mediatek/patches-*/*rtl8366* "$pdir"/ 2>/dev/null || true
+            cp -f /tmp/glinet-src/target/linux/mediatek/patches-*/*realtek* "$pdir"/ 2>/dev/null || true
+          fi
+        done
+
+        echo "Erweitere Target-Kernel-Configs fuer RTL8366UB DSA..."
+        for cfg in target/linux/mediatek/filogic/config-*; do
+          if [ -f "$cfg" ]; then
+            echo "CONFIG_NET_DSA=y" >> "$cfg"
+            echo "CONFIG_NET_DSA_REALTEK=y" >> "$cfg"
+            echo "CONFIG_NET_DSA_REALTEK_RTL8366RB=y" >> "$cfg"
+            echo "CONFIG_NET_DSA_REALTEK_RTL8366UB=y" >> "$cfg"
+            echo "CONFIG_NET_DSA_REALTEK_SMI=y" >> "$cfg"
+            echo "CONFIG_NET_DSA_REALTEK_MDIO=y" >> "$cfg"
+            echo "CONFIG_NET_DSA_TAG_RTL4_A=y" >> "$cfg"
+            echo "CONFIG_NET_DSA_TAG_NONE=y" >> "$cfg"
+          fi
+        done
+
         for mk in /tmp/glinet-src/target/linux/mediatek/image/*.mk; do
           if grep -q -i "mt5000" "$mk"; then
             echo "Gefunden in $mk -> importiere nach filogic.mk"
@@ -122,7 +143,6 @@ jobs:
           fi
         done
 
-        # Sicherheits-Check: Sofortiger Abbruch bei Minute 1, falls der Block fehlt
         echo "=== Überprüfe injizierte Definition in filogic.mk ==="
         grep -n -A 15 -i "Device/glinet_gl-mt5000" target/linux/mediatek/image/filogic.mk || { echo "FEHLER: MT5000 Gerätedefinition wurde nicht gefunden!"; exit 1; }
 
@@ -145,7 +165,6 @@ jobs:
 
         sed -i 's/.*video/#&/' feeds.conf.default || true
 
-        # DIY_P1_SH ZUERST ausführen, damit feeds.conf.default erweitert wird (z. B. Footstrap Theme Feed)
         [ -f $GITHUB_WORKSPACE/$DIY_P1_SH ] && $GITHUB_WORKSPACE/$DIY_P1_SH || true
 
         echo "::group::Feeds configuration"
@@ -168,7 +187,6 @@ jobs:
           cat $CONFIG_FILE_DOCKER >> openwrt/.config
         fi
 
-        # Verhindert den Kconfig-Fehler durch Squeezelite
         sed -i '/CONFIG_PACKAGE_squeezelite/d' openwrt/.config 2>/dev/null || true
         echo "# CONFIG_PACKAGE_squeezelite-custom is not set" >> openwrt/.config
 
@@ -180,17 +198,14 @@ jobs:
         grep -E '^(CONFIG_TARGET|CONFIG_PACKAGE_(docker|dockerd|luci-app-dockerman|containerd|runc))' .config || true
         echo "::endgroup::"
 
-        # DIY_P2_SH vor defconfig ausführen, um kmod-dsa-realtek und Theme in .config zu schreiben
         [ -f $GITHUB_WORKSPACE/$DIY_P2_SH ] && $GITHUB_WORKSPACE/$DIY_P2_SH || true
 
-        # Generiert die finale Konfiguration
         make defconfig
 
         echo "::group::当前 diffconfig"
         ./scripts/diffconfig.sh
         echo "::endgroup::"
 
-        # Validierungs-Schritt: Bricht sofort ab, falls make defconfig wieder auf openwrt_one zurückgefallen ist
         echo "=== Überprüfe gewähltes Target ==="
         grep "^CONFIG_TARGET_mediatek_filogic_DEVICE_glinet_gl-mt5000=y" .config || {
           echo "FEHLER: Build-System hat gl-mt5000 verworfen!"
