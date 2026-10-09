@@ -5,7 +5,6 @@
 # This is free software, licensed under the MIT License.
 # See /LICENSE for more information.
 #
-# https://github.com/P3TERX/Actions-OpenWrt
 # File name: scripts-part2.sh
 # Description: OpenWrt DIY script part 2 (After Update feeds)
 #
@@ -37,8 +36,6 @@ declare -A REPOS=(
     ["https://github.com/Openwrt-Passwall/openwrt-passwall2"]=""
     ["https://github.com/Openwrt-Passwall/openwrt-passwall"]=""
     ["https://github.com/Openwrt-Passwall/openwrt-passwall-packages"]=""
-    # ["https://github.com/fw876/helloworld"]="v196.3"
-    # ["https://github.com/immortalwrt/homeproxy"]=""
     ["https://github.com/10000ge10000/luci-app-openclaw"]=""
     ["https://github.com/Slava-Shchipunov/awg-openwrt"]=""
     ["https://github.com/QiuSimons/luci-app-daed"]=""
@@ -67,50 +64,28 @@ patch_rust_makefile() {
 }
 
 reset_custom_package_dir() {
-    if [ -z "$TARGET_DIR" ] || [ "$TARGET_DIR" = "/" ]; then
-        echo "错误: TARGET_DIR 异常，拒绝删除: '$TARGET_DIR'"
-        exit 1
-    fi
-
-    rm -rf "$TARGET_DIR"
-    mkdir -p "$TARGET_DIR"
+    [ -n "$TARGET_DIR" ] && [ "$TARGET_DIR" != "/" ] && rm -rf "$TARGET_DIR" && mkdir -p "$TARGET_DIR"
 }
 
 remove_conflicting_makefiles() {
-    local keyword
-    local file
-    local file_lower
-
-    echo "开始清理 feeds 中会被 package/custom 覆盖的 Makefile"
-    find . -type f -name "Makefile" ! -path "$TARGET_DIR/*" -print0 |
-    while IFS= read -r -d $'\0' file; do
+    find . -type f -name "Makefile" ! -path "$TARGET_DIR/*" -print0 | while IFS= read -r -d $'\0' file; do
         file_lower="${file,,}"
         for keyword in "${CONFLICTING_MAKEFILE_KEYWORDS[@]}"; do
             if [[ "$file_lower" == *"$keyword"* ]]; then
-                echo "删除冲突 Makefile: $file"
                 rm -f "$file"
                 break
             fi
         done
     done
-    echo "冲突 Makefile 清理完成"
 }
 
 clone_repo() {
     local repo_url="$1"
     local repo_branch="${REPOS[$repo_url]}"
-    local repo_name
-    local repo_dir
+    local repo_name="$(basename -s .git "$repo_url")"
+    local repo_dir="$TARGET_DIR/$repo_name"
 
-    repo_name="$(basename -s .git "$repo_url")"
-    repo_dir="$TARGET_DIR/$repo_name"
-
-    if [ -d "$repo_dir" ]; then
-        echo "目录 $repo_dir 已存在，跳过克隆"
-        return 0
-    fi
-
-    echo "克隆仓库: $repo_name, URL: $repo_url, 分支: ${repo_branch:-默认分支}"
+    [ -d "$repo_dir" ] && return 0
     if [ -z "$repo_branch" ]; then
         git clone --single-branch --depth 1 "$repo_url" "$repo_dir"
     else
@@ -119,76 +94,29 @@ clone_repo() {
 }
 
 clone_custom_repos() {
-    local repo
-    local failed=0
-
-    echo "开始克隆自定义仓库"
     for repo in "${!REPOS[@]}"; do
-        if clone_repo "$repo"; then
-            echo "仓库克隆完成: $(basename -s .git "$repo")"
-        else
-            echo "仓库克隆失败: $repo"
-            failed=$((failed + 1))
-        fi
+        clone_repo "$repo"
     done
-
-    if [ "$failed" -ne 0 ]; then
-        echo "错误: $failed 个自定义仓库克隆失败"
-        exit 1
-    fi
-    echo "所有自定义仓库克隆完成"
 }
-
-verify_turboacc_makefile() {
-    local turboacc_luci_dir
-
-    turboacc_luci_dir="$(find "$TARGET_DIR/turboacc" -maxdepth 1 -type d -name 'luci-app*' | head -n 1)"
-    if [ -z "$turboacc_luci_dir" ] || [ ! -f "$turboacc_luci_dir/Makefile" ]; then
-        echo "未找到 turboacc 的 luci-app Makefile，终止 GitHub Action"
-        exit 1
-    fi
-
-    echo "找到 turboacc Makefile，继续执行"
-}
-
-flatten_feed_layout_repos() {
-    local feed_dir="$TARGET_DIR/luci-app-kms"
-
-    if [ ! -d "$feed_dir" ]; then
-        return 0
-    fi
-
-    echo "展开 feed 布局仓库: luci-app-kms"
-    mv "$feed_dir/package/network/vlmcsd" "$TARGET_DIR/vlmcsd"
-    mv "$feed_dir/luci/applications/luci-app-vlmcsd" "$TARGET_DIR/luci-app-vlmcsd"
-    rm -rf "$feed_dir"
-    echo "已展开: package/custom/vlmcsd + package/custom/luci-app-vlmcsd"
-}
-
-# =================================================================
-# 根据 WORKFLOW_NAME 决定执行逻辑
-# =================================================================
 
 echo "--- DIY Part 2 脚本开始执行 ---"
 echo "WORKFLOW_NAME: $WORKFLOW_NAME"
 
-if [[ "$WORKFLOW_NAME" == "gl-mt5000_immortalwrt" ]]; then
-    echo ">>> 检测到设备: $WORKFLOW_NAME (ImmortalWrt) <<<"
-    echo "ImmortalWrt 自带丰富的插件库。为了测试基础固件的编译成功率，"
-    echo "暂时跳过所有第三方自定义包的克隆和 Makefile 删除操作。"
+if [[ "$WORKFLOW_NAME" == "gl-mt5000_immortalwrt" || "$WORKFLOW_NAME" == "GL-MT5000" ]]; then
+    echo ">>> Konfiguriere GL-MT5000 (ImmortalWrt) Board- und Treibereinstellungen <<<"
 
-    # 1. DSA-Switch-Port-Zuweisung in 02_network patchen
+    # 1. 02_network patchen
     NETWORK_SETUP="target/linux/mediatek/filogic/base-files/etc/board.d/02_network"
     if [ -f "$NETWORK_SETUP" ]; then
-        echo "Patche 02_network fuer glinet,gl-mt5000..."
-        sed -i '/glinet,gl-mt6000)/i \
+        if ! grep -q "glinet,gl-mt5000" "$NETWORK_SETUP"; then
+            sed -i '/glinet,gl-mt6000)/i \
 glinet,gl-mt5000)\
 \tucidef_set_interfaces_lan_wan "lan1 lan2" "eth1"\
 \t;;' "$NETWORK_SETUP"
+        fi
     fi
 
-    # 2. Statische Fallback-Netzwerkkonfiguration direkt in RootFS injizieren (inkl. WAN Rescue)
-    echo "Erstelle statische network-Konfiguration (LAN: 192.168.100.1, WAN-Rescue: 192.168.10.1)..."
+    # 2. Statische Fallback-Netzwerkkonfiguration in RootFS injizieren
     mkdir -p package/base-files/files/etc/config
     cat << 'EOF' > package/base-files/files/etc/config/network
 config interface 'loopback'
@@ -212,18 +140,49 @@ config interface 'lan'
 config interface 'wan'
 	option device 'eth1'
 	option proto 'static'
-	option ipaddr '192.168.100.1'
+	option ipaddr '192.168.10.1'
 	option netmask '255.255.255.0'
 EOF
 
-    # 3. Realtek DSA Switch Treiber aktivieren (RTL8366UB + Tagging)
-    echo "Aktiviere Realtek DSA Switch Module in .config..."
-    echo "CONFIG_PACKAGE_kmod-dsa-realtek=y" >> .config
-    echo "CONFIG_PACKAGE_kmod-dsa-realtek-rtl8366rb=y" >> .config
-    echo "CONFIG_PACKAGE_kmod-dsa-realtek-rtl8366ub=y" >> .config
-    echo "CONFIG_PACKAGE_kmod-dsa-realtek-smi=y" >> .config
-    echo "CONFIG_PACKAGE_kmod-dsa-realtek-mdio=y" >> .config
-    echo "CONFIG_PACKAGE_kmod-dsa-tag-rtl4-a=y" >> .config
+    # 3. Kernel- und Modulpakete für Realtek Switch, USB Mass Storage, Dateisysteme & Cake aktivieren
+    cat << 'EOF' >> .config
+# --- Switch / DSA Treiber ---
+CONFIG_PACKAGE_kmod-dsa-realtek=y
+CONFIG_PACKAGE_kmod-dsa-realtek-rtl8366rb=y
+CONFIG_PACKAGE_kmod-dsa-realtek-rtl8366ub=y
+CONFIG_PACKAGE_kmod-dsa-realtek-smi=y
+CONFIG_PACKAGE_kmod-dsa-realtek-mdio=y
+CONFIG_PACKAGE_kmod-dsa-tag-rtl4-a=y
+
+# --- USB Storage & Block Devices ---
+CONFIG_PACKAGE_kmod-usb-core=y
+CONFIG_PACKAGE_kmod-usb3=y
+CONFIG_PACKAGE_kmod-usb-storage=y
+CONFIG_PACKAGE_kmod-usb-storage-uas=y
+CONFIG_PACKAGE_kmod-scsi-core=y
+CONFIG_PACKAGE_block-mount=y
+CONFIG_PACKAGE_e2fsprogs=y
+CONFIG_PACKAGE_f2fs-tools=y
+CONFIG_PACKAGE_dosfstools=y
+
+# --- Dateisysteme ---
+CONFIG_PACKAGE_kmod-fs-ext4=y
+CONFIG_PACKAGE_kmod-fs-f2fs=y
+CONFIG_PACKAGE_kmod-fs-vfat=y
+CONFIG_PACKAGE_kmod-nls-cp437=y
+CONFIG_PACKAGE_kmod-nls-iso8859-1=y
+CONFIG_PACKAGE_kmod-nls-utf8=y
+
+# --- SQM QoS mit Cake ---
+CONFIG_PACKAGE_sqm-scripts=y
+CONFIG_PACKAGE_luci-app-sqm=y
+CONFIG_PACKAGE_kmod-sched-cake=y
+CONFIG_PACKAGE_kmod-sched-core=y
+CONFIG_PACKAGE_tc-tiny=y
+
+# --- LuCI Theme ---
+CONFIG_PACKAGE_luci-theme-footstrap=y
+EOF
 
     # 4. WAN-Rescue Firewall Regel hinterlegen
     mkdir -p package/base-files/files/etc/uci-defaults/
@@ -241,11 +200,7 @@ exit 0
 EOF
     chmod +x package/base-files/files/etc/uci-defaults/99-gl-mt5000-wan-rescue
 
-    # 5. Footstrap LuCI Theme aktivieren
-    echo "Aktiviere Footstrap Theme in .config..."
-    echo "CONFIG_PACKAGE_luci-theme-footstrap=y" >> .config
-
-    # 6. Standard-Theme auf Footstrap vorkonfigurieren
+    # 5. Standard-Theme auf Footstrap vorkonfigurieren
     cat << 'EOF' > package/base-files/files/etc/uci-defaults/99-default-theme-footstrap
 uci set luci.main.mediaurlbase='/luci-static/footstrap'
 uci commit luci
@@ -254,13 +209,10 @@ EOF
     chmod +x package/base-files/files/etc/uci-defaults/99-default-theme-footstrap
 
 else
-    echo ">>> 执行常规 OpenWrt / GL.iNet 的包拉取逻辑 <<<"
     patch_rust_makefile
     reset_custom_package_dir
     remove_conflicting_makefiles
     clone_custom_repos
-    flatten_feed_layout_repos
-    verify_turboacc_makefile
 fi
 
 echo "--- DIY Part 2 脚本执行完毕 ---"
