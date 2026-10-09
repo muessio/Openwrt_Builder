@@ -96,23 +96,6 @@ jobs:
         cd openwrt
         [ -f $GITHUB_WORKSPACE/$DIY_P2_SH ] && $GITHUB_WORKSPACE/$DIY_P2_SH || true
 
-        # RTL8366UB DSA-Konfiguration in alle Mediatek-Kernel-Configs einbrennen
-        for cfg in target/linux/mediatek/filogic/config-* target/linux/mediatek/config-*; do
-          if [ -f "$cfg" ]; then
-            cat << 'EOF' >> "$cfg"
-CONFIG_NET_DSA=y
-CONFIG_NET_DSA_TAG_RTL4_A=y
-CONFIG_NET_DSA_TAG_NONE=y
-CONFIG_NET_DSA_REALTEK=y
-CONFIG_NET_DSA_REALTEK_RTL8366RB=y
-CONFIG_NET_DSA_REALTEK_RTL8366UB=y
-CONFIG_NET_DSA_REALTEK_SMI=y
-CONFIG_NET_DSA_REALTEK_MDIO=y
-CONFIG_FIXED_PHY=y
-EOF
-          fi
-        done
-
         make defconfig
 
     - name: 下载软件包
