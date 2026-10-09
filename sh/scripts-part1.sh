@@ -6,7 +6,7 @@
 # See /LICENSE for more information.
 #
 # https://github.com/P3TERX/Actions-OpenWrt
-# File name: diy-part1.sh
+# File name: scripts-part1.sh
 # Description: OpenWrt DIY script part 1 (Before Update feeds)
 #
 
@@ -124,11 +124,30 @@ elif [[ "$WORKFLOW_NAME" == "gl-mt5000_immortalwrt" ]]; then
             echo "filogic.mk 中已存在 glinet_gl-mt5000 定义，跳过追加"
         fi
 
+        echo "4. 复制 Kernel-Patches für Realtek Switch/DSA..."
+        mkdir -p target/linux/mediatek/patches-6.18
+        cp -f "$GL_TMP_DIR"/target/linux/mediatek/patches-*/*rtl8366* target/linux/mediatek/patches-6.18/ 2>/dev/null || true
+        cp -f "$GL_TMP_DIR"/target/linux/mediatek/patches-*/*realtek* target/linux/mediatek/patches-6.18/ 2>/dev/null || true
+
+        echo "5. Kernel-Konfiguration um Realtek DSA und RTL8366 erweitern..."
+        for cfg in target/linux/mediatek/filogic/config-*; do
+            if [ -f "$cfg" ]; then
+                echo "CONFIG_NET_DSA_REALTEK=y" >> "$cfg"
+                echo "CONFIG_NET_DSA_REALTEK_RTL8366RB=y" >> "$cfg"
+                echo "CONFIG_NET_DSA_REALTEK_SMI=y" >> "$cfg"
+                echo "CONFIG_NET_DSA_TAG_RTL4_A=y" >> "$cfg"
+                echo "CONFIG_NET_DSA_TAG_NONE=y" >> "$cfg"
+            fi
+        done
+
         rm -rf "$GL_TMP_DIR"
         echo "GL-MT5000 板级支持导入成功！"
     else
         echo "警告: 克隆 GL.iNet MT5000 分支失败，请检查网络或仓库地址！"
     fi
+
+    # Footstrap Theme Feed hinzufügen
+    echo "src-git footstrap https://github.com/VizzleTF/luci-theme-footstrap.git" >> "feeds.conf.default"
 
     # 默认 IP 设置
     set_default_ip "192.168.100.1" "mt5000-immortalwrt"
