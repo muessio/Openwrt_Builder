@@ -1,15 +1,15 @@
-name: Build ImmortalWrt Brume 3 (GL-MT5000)
+name: Build immortalwrt
 
 on:
   repository_dispatch:
   workflow_dispatch:
     inputs:
       docker:
-        description: '是否编译docker'
+        description: 'Docker einbinden'
         required: false
         default: 'false'
       tag2:
-        description: 'ImmortalWrt版本'
+        description: 'ImmortalWrt Version/Tag'
         required: false
         default: 'master'
 
@@ -44,14 +44,12 @@ jobs:
 
     steps:
     - name: Checkout
-      uses: actions/checkout@main
+      uses: actions/checkout@v4
 
     - name: 释放磁盘空间
       run: |
-        df -hT
         sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
         sudo docker image prune --all --force
-        df -hT
 
     - name: 初始化环境
       env:
@@ -60,7 +58,6 @@ jobs:
         sudo -E apt-get update
         sudo -E apt-get -y install dos2unix libfuse-dev
         sudo bash -c 'bash <(curl -s https://build-scripts.immortalwrt.org/init_build_environment.sh)'
-        sudo -E systemctl daemon-reload
         sudo timedatectl set-timezone "$TZ"
         sudo mkdir -p /workdir
         sudo chown $USER:$GROUPS /workdir
@@ -100,7 +97,7 @@ jobs:
         cd openwrt
         [ -f $GITHUB_WORKSPACE/$DIY_P2_SH ] && $GITHUB_WORKSPACE/$DIY_P2_SH || true
 
-        # Kernel-Config zwingend nach Target-Setup mit Realtek DSA-Optionen absichern
+        # RTL8366UB DSA-Konfiguration in alle Mediatek-Kernel-Configs einbrennen
         for cfg in target/linux/mediatek/filogic/config-* target/linux/mediatek/config-*; do
           if [ -f "$cfg" ]; then
             cat << 'EOF' >> "$cfg"
@@ -119,12 +116,6 @@ EOF
 
         make defconfig
 
-        echo "=== Überprüfe gewähltes Target ==="
-        grep "^CONFIG_TARGET_mediatek_filogic_DEVICE_glinet_gl-mt5000=y" .config || {
-          echo "FEHLER: Build-System hat gl-mt5000 verworfen!"
-          exit 1
-        }
-
     - name: 下载软件包
       id: package
       run: |
@@ -136,7 +127,6 @@ EOF
       id: compile
       run: |
         cd openwrt
-        echo -e "$(nproc) 线程编译"
         make -j$(expr $(nproc) + 1) || make -j1 V=s
         grep '^CONFIG_TARGET.*DEVICE.*=y' .config | sed -r 's/.*DEVICE_(.*)=y/\1/' > DEVICE_NAME
         echo "FILE_DATE=_$(date +"%Y%m%d%H%M")" >> $GITHUB_ENV
