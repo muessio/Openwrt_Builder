@@ -96,8 +96,10 @@ jobs:
         cd openwrt
         [ -f $GITHUB_WORKSPACE/$DIY_P2_SH ] && $GITHUB_WORKSPACE/$DIY_P2_SH || true
 
+        # Reale OpenWrt-Paketsymbole für Realtek DSA erzwingen
+        echo "CONFIG_PACKAGE_kmod-dsa=y" >> .config
         echo "CONFIG_PACKAGE_kmod-dsa-realtek=y" >> .config
-        echo "CONFIG_PACKAGE_kmod-dsa-realtek-rtl8366ub=y" >> .config
+        echo "CONFIG_PACKAGE_kmod-dsa-rtl8366rb=y" >> .config
         echo "CONFIG_PACKAGE_kmod-dsa-tag-rtl4-a=y" >> .config
         echo "CONFIG_PACKAGE_kmod-switch-rtl8366-smi=y" >> .config
 
@@ -105,7 +107,7 @@ jobs:
         make -C target/linux olddefconfig || true
 
         echo "=== Überprüfe Status der DSA-Treiber in .config ==="
-        grep -E "CONFIG_PACKAGE_kmod-dsa|CONFIG_TARGET_DEVICE.*gl-mt5000" .config || true
+        grep -E "CONFIG_PACKAGE_kmod-dsa.*=y|CONFIG_PACKAGE_kmod-switch.*=y" .config || true
 
     - name: 下载软件包
       id: package
@@ -139,7 +141,7 @@ jobs:
         name: ImmortalWrt Brume 3 (GL-MT5000) ${{ steps.compile.outputs.file-date }}
         tag_name: ImmortalWrt_GL-MT5000_${{ steps.compile.outputs.file-date }}
         body: |
-          ImmortalWrt Build für GL.iNet MT5000 mit integriertem RTL8366UB DSA-Treiber und USB-Storage Support.
+          ImmortalWrt Build für GL.iNet MT5000 mit integriertem RTL8366 DSA-Treiber und USB-Storage Support.
         files: |
           openwrt/bin/targets/*/*/*sysupgrade*
           openwrt/bin/targets/*/*/*factory*
