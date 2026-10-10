@@ -4,77 +4,75 @@ on:
   workflow_call:
     inputs:
       device:
-        description: Device name used for artifact names.
+        description: Gerätename für Artefakt-Bezeichnungen.
         required: true
         type: string
       config_file:
-        description: Repository config file to move into openwrt/.config.
+        description: Pfad zur Konfigurationsdatei im Repository für openwrt/.config.
         required: true
         type: string
       extra_config_file:
-        description: Optional repository config fragment appended after the base config.
+        description: Optionale zusätzliche Konfigurationsfragmente.
         default: ""
         type: string
       workflow_name:
-        description: Logical workflow/device name consumed by custom shell scripts.
+        description: Logischer Workflow-/Gerätename für benutzerdefinierte Skripte.
         required: true
         type: string
       repo_url:
-        description: OpenWrt source repository URL.
+        description: URL des OpenWrt/ImmortalWrt-Quellcode-Repositories.
         required: true
         type: string
       repo_branch:
-        description: OpenWrt source branch or tag.
+        description: Quellcode-Branch oder Tag.
         required: true
         type: string
       feeds_conf:
-        description: Custom feeds.conf.default path in the repository.
+        description: Pfad zur benutzerdefinierten feeds.conf.default.
         default: feeds.conf.default
         type: string
       diy_p1_sh:
-        description: Part 1 custom script path.
+        description: Pfad zum benutzerdefinierten Skript Teil 1.
         default: ./sh/scripts-part1.sh
         type: string
       diy_p2_sh:
-        description: Part 2 custom script path.
+        description: Pfad zum benutzerdefinierten Skript Teil 2.
         default: ./sh/scripts-part2.sh
         type: string
       default_setting:
-        description: Custom default settings package path.
+        description: Pfad zum Paket für Standardeinstellungen.
         default: ./default-settings-m0eak
         type: string
       cache_toolchain:
-        description: Whether to enable toolchain cache.
+        description: Toolchain-Cache aktivieren.
         default: "true"
         type: string
       timezone:
-        description: Runner timezone.
-        default: Asia/Shanghai
+        description: Zeitzone des Runners.
+        default: Europe/Berlin
         type: string
       install_automake_117:
-        description: Install local Automake 1.17 before cloning source.
+        description: Lokales Automake 1.17 vor dem Klonen kompilieren.
         default: "false"
         type: string
       sonic_fullcone:
-        description: Apply Sonic Fullcone patch after feeds install.
+        description: Sonic Fullcone NAT-Patch nach Feeds-Installation anwenden.
         default: "false"
         type: string
 
 jobs:
   build:
-    name: 编译 ${{ inputs.device }}
-    # 无法按构建号锁定镜像（actions/runner-images#13034 官方拒绝，带日期 label 会导致永久 queued）。
-    # ubuntu-22.04 当前镜像 20260907.292 的 step6 hang / step7 gnu.org 超时已由脚本层 workaround
-    # 规避（strip full-upgrade + automake 多源 fallback）。若仍不稳，plan B 是迁移 ubuntu-24.04。
+    name: Kompiliere ${{ inputs.device }}
+    # Feste Ubuntu-Version: Workarounds für Runner-Hang/Timeouts sind aktiv
     runs-on: ubuntu-22.04
     steps:
-      - name: Checkout repository
+      - name: Repository auschecken
         uses: actions/checkout@main
 
-      - name: Show runner environment
+      - name: Runner-Umgebung anzeigen
         shell: bash
         run: |
-          echo "::group::Build workflow inputs"
+          echo "::group::Workflow-Eingabeparameter"
           echo "device=${{ inputs.device }}"
           echo "workflow_name=${{ inputs.workflow_name }}"
           echo "repo_url=${{ inputs.repo_url }}"
@@ -98,26 +96,26 @@ jobs:
             "files"; do
             [ -z "$path" ] && continue
             if [ -e "$path" ]; then
-              echo "exists: $path"
+              echo "Gefunden: $path"
             else
-              echo "missing: $path"
+              echo "Nicht vorhanden: $path"
             fi
           done
           echo "::endgroup::"
 
-          echo "::group::Runner environment"
+          echo "::group::Runner-Systemumgebung"
           echo "================================================="
-          echo "GitHub Actions runner environment"
+          echo "GitHub Actions Runner Umgebungsinformationen"
           echo "================================================="
           lscpu
-          echo "CPU threads: $(nproc)"
+          echo "Verfügbare CPU-Threads: $(nproc)"
           free -h
           df -hT
           uname -a
           lsb_release -a || true
           echo "::endgroup::"
 
-      - name: Optimize disk space
+      - name: Speicherplatz optimieren
         uses: hugoalh/disk-space-optimizer-ghaction@v0.8.1
         with:
           operate_sudo: "True"
@@ -132,33 +130,29 @@ jobs:
           apt_prune: "True"
           apt_clean: "True"
 
-      - name: Remove large preinstalled tools
+      - name: Große vorinstallierte Tools entfernen
         shell: bash
         run: |
-          echo "Disk before cleanup:"
+          echo "Festplattenbelegung vor der Bereinigung:"
           df -hT
           sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc
           sudo rm -rf /usr/share/swift /usr/local/.ghcup
           sudo rm -rf /opt/hostedtoolcache/CodeQL
           sudo docker image prune --all --force
-          echo "Disk after cleanup:"
+          echo "Festplattenbelegung nach der Bereinigung:"
           df -hT
 
-      - name: Tune block device readahead (runner-loss mitigation)
+      - name: Block-Device Readahead anpassen (Schutz vor Runner-Verbindungsverlust)
         shell: bash
         run: |
-          # actions/runner-images#13770：新内核默认 read_ahead_kb 由 128 提到 4096，
-          # 重 I/O（apt 装包 / 编译 / 下载）时打满 page cache → I/O 抖动 → hosted
-          # runner lost communication。官方 udev 修复(#13938)只 pin SCSI(sd*)，
-          # Azure v5/v6 宿主机的 NVMe(nvme*) 漏网。这里对所有块设备统一 pin 128。
-          # 运行时 sysfs 参数，免重启、job 结束 VM 即销毁，无持久副作用。
-          echo "== read_ahead_kb 调整前 =="
+          # Reduziert read_ahead_kb von 4096 auf 128, um I/O-Spitzen und Runner-Abbrüche zu verhindern
+          echo "== read_ahead_kb vor der Anpassung =="
           for f in /sys/block/*/queue/read_ahead_kb; do printf '%s = %s\n' "$f" "$(cat "$f" 2>/dev/null)"; done
           for f in /sys/block/*/queue/read_ahead_kb; do echo 128 | sudo tee "$f" >/dev/null 2>&1 || true; done
-          echo "== read_ahead_kb 调整后 =="
+          echo "== read_ahead_kb nach der Anpassung =="
           for f in /sys/block/*/queue/read_ahead_kb; do printf '%s = %s\n' "$f" "$(cat "$f" 2>/dev/null)"; done
 
-      - name: Initialize build environment
+      - name: Build-Umgebung initialisieren
         shell: bash
         timeout-minutes: 15
         env:
@@ -173,16 +167,15 @@ jobs:
           sudo rm -rf /etc/apt/sources.list.d/*
           sudo -E apt-get -yqq update
           sudo -E apt-get -yqq purge azure-cli* ghc* zulu* llvm* firefox google* dotnet* powershell openjdk* mongodb* moby* || true
-          # 防托管 runner 失联：ubuntu-22.04 新镜像(20260907.292)上 immortalwrt init
-          # 脚本的 apt full-upgrade 触发 hosted runner lost communication（同类回归见
-          # actions/runner-images#13770）。full-upgrade 仅刷新已装包版本，对编译非必需，
-          # 下载脚本后剥离该行；hold + NEEDRESTART_MODE=n 双保险防服务重启。
+
+          # Verhindert Runner-Verbindungsabbrüche durch unnötiges Kernel-/System-Full-Upgrade
           sudo apt-mark hold systemd systemd-resolved systemd-sysv dbus udev libsystemd0 libdbus-1-3 || true
           curl -s https://build-scripts.immortalwrt.org/init_build_environment.sh -o /tmp/iwe.sh
-          sed -i 's/^[[:space:]]*apt full-upgrade.*/: # full-upgrade removed (runner-loss workaround)/' /tmp/iwe.sh
-          grep -q "runner-loss workaround" /tmp/iwe.sh || { echo "FATAL: full-upgrade strip failed"; exit 1; }
+          sed -i 's/^[[:space:]]*apt full-upgrade.*/: # full-upgrade entfernt (Workaround fuer Runner-Lost)/' /tmp/iwe.sh
+          grep -q "Workaround fuer Runner-Lost" /tmp/iwe.sh || { echo "FEHLER: Entfernen von full-upgrade fehlgeschlagen"; exit 1; }
           sudo NEEDRESTART_MODE=n NEEDRESTART_SUSPEND=1 bash /tmp/iwe.sh
           sudo apt-mark unhold systemd systemd-resolved systemd-sysv dbus udev libsystemd0 libdbus-1-3 || true
+
           curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
           sudo -E apt-get install -y clang llvm nodejs dwarves
           sudo npm install -g pnpm
@@ -194,7 +187,7 @@ jobs:
           echo "WORKFLOW_NAME=${{ inputs.workflow_name }}" >> "$GITHUB_ENV"
           echo "TAG=${{ inputs.repo_branch }}" >> "$GITHUB_ENV"
 
-      - name: Install local Automake 1.17
+      - name: Automake 1.17 lokal kompilieren
         if: ${{ inputs.install_automake_117 == 'true' }}
         shell: bash
         run: |
@@ -203,20 +196,19 @@ jobs:
           BUILD_DIR=/workdir/automake-1.17-build
           mkdir -p "$BUILD_DIR"
           cd "$BUILD_DIR"
-          # 多源 fallback：gnu.org 在部分 Azure 宿主机上会 connect timeout
           OK=0
           for base in \
             "https://ftp.gnu.org/gnu/automake" \
             "https://mirrors.kernel.org/gnu/automake" \
             "https://mirror.netcologne.de/gnu/automake" \
             "https://mirrors.tuna.tsinghua.edu.cn/gnu/automake"; do
-            echo "尝试下载: $base/automake-1.17.tar.xz"
+            echo "Versuche Download von: $base/automake-1.17.tar.xz"
             if curl -fL --connect-timeout 20 --max-time 120 -o automake-1.17.tar.xz "$base/automake-1.17.tar.xz"; then
-              OK=1; echo "下载成功: $base"; break
+              OK=1; echo "Download erfolgreich: $base"; break
             fi
-            echo "该源失败，切换下一个…"
+            echo "Download fehlgeschlagen, wechsle zum naechsten Mirror..."
           done
-          [ "$OK" = "1" ] || { echo "FATAL: 所有 automake 源均下载失败"; exit 1; }
+          [ "$OK" = "1" ] || { echo "KRITISCH: Alle Download-Quellen fuer automake fehlgeschlagen"; exit 1; }
           rm -rf automake-1.17-src
           mkdir -p automake-1.17-src
           tar -xf automake-1.17.tar.xz -C automake-1.17-src --strip-components=1
@@ -228,7 +220,7 @@ jobs:
           "$PREFIX/bin/automake-1.17" --version | sed -n '1p'
           "$PREFIX/bin/aclocal-1.17" --version | sed -n '1p'
 
-      - name: Clone firmware source
+      - name: Quellcode klonen
         id: clone-source
         shell: bash
         working-directory: /workdir
@@ -237,7 +229,7 @@ jobs:
           ln -sf /workdir/openwrt "$GITHUB_WORKSPACE/openwrt"
           cd openwrt
           git fetch --tags || true
-          echo "::group::OpenWrt source revision"
+          echo "::group::OpenWrt Quellcode-Revision"
           git log -1 --oneline
           git remote -v
           git status --short
@@ -245,12 +237,12 @@ jobs:
           echo "OPENWRT_PATH=$PWD" >> "$GITHUB_ENV"
           echo "openwrt-path=$PWD" >> "$GITHUB_OUTPUT"
 
-      - name: Update feeds and run custom script part 1
+      - name: Feeds aktualisieren und DIY-Skript Teil 1 ausführen
         shell: bash
         run: |
           cd openwrt
           [ -e "$GITHUB_WORKSPACE/${{ inputs.feeds_conf }}" ] && cp "$GITHUB_WORKSPACE/${{ inputs.feeds_conf }}" ./feeds.conf.default
-          echo "::group::Feeds configuration"
+          echo "::group::Feeds-Konfiguration"
           pwd
           ls -l feeds.conf.default || true
           sed -n '1,80p' feeds.conf.default || true
@@ -259,18 +251,18 @@ jobs:
           chmod +x "$GITHUB_WORKSPACE/${{ inputs.diy_p1_sh }}"
           "$GITHUB_WORKSPACE/${{ inputs.diy_p1_sh }}"
 
-      - name: Install feeds
+      - name: Feeds installieren
         shell: bash
         run: cd openwrt && ./scripts/feeds install -a
 
-      - name: Apply Sonic Fullcone patch
+      - name: Sonic Fullcone Patch anwenden
         if: ${{ inputs.sonic_fullcone == 'true' }}
         shell: bash
         run: |
           cd openwrt
           curl -sSL https://raw.githubusercontent.com/mufeng05/openwrt-sonic-fullcone/master/add_sonic_fullcone.sh | bash
 
-      - name: Apply custom config and run custom script part 2
+      - name: Benutzerdefinierte Konfiguration anwenden und DIY-Skript Teil 2 ausführen
         shell: bash
         run: |
           [ -e "$GITHUB_WORKSPACE/${{ inputs.default_setting }}" ] && mv "$GITHUB_WORKSPACE/${{ inputs.default_setting }}" openwrt/package/default-settings-m0eak
@@ -280,7 +272,7 @@ jobs:
             cat "${{ inputs.extra_config_file }}" >> openwrt/.config
           fi
           cd openwrt
-          echo "::group::Pre-defconfig workspace snapshot"
+          echo "::group::Status vor make defconfig"
           pwd
           ls -ld package/default-settings-m0eak files .config 2>/dev/null || true
           grep -E '^(CONFIG_TARGET|CONFIG_PACKAGE_(docker|dockerd|luci-app-dockerman|containerd|runc))' .config || true
@@ -288,11 +280,11 @@ jobs:
           chmod +x "$GITHUB_WORKSPACE/${{ inputs.diy_p2_sh }}"
           "$GITHUB_WORKSPACE/${{ inputs.diy_p2_sh }}"
           make defconfig
-          echo "::group::Current diffconfig"
+          echo "::group::Aktuelle Konfigurationsdifferenz (diffconfig)"
           ./scripts/diffconfig.sh
           echo "::endgroup::"
 
-      - name: Cache toolchain
+      - name: Toolchain zwischenspeichern (Cache)
         uses: HiGarfield/cachewrtbuild@main
         if: ${{ inputs.cache_toolchain != 'false' }}
         with:
@@ -300,52 +292,52 @@ jobs:
           mixkey: ${{ github.workflow }}-${{ inputs.workflow_name }}-${{ hashFiles(inputs.config_file, '**/scripts-part*.sh') }}
           prefix: ${{ steps.clone-source.outputs.openwrt-path }}
 
-      - name: Download packages
+      - name: Paketquellen herunterladen (make download)
         shell: bash
         run: |
           cd openwrt
           make download -j"$(nproc)" || make download -j1 V=s
-          echo "::group::Download directory summary"
+          echo "::group::Übersicht Download-Verzeichnis"
           du -sh dl || true
           find dl -size -1024c -exec ls -l {} \; || true
           echo "::endgroup::"
           find dl -size -1024c -exec rm -f {} \;
 
-      - name: Compile firmware
+      - name: Firmware kompilieren
         shell: bash
         run: |
           cd openwrt
-          echo "Compiling with $(nproc) threads..."
+          echo "Kompiliere mit $(nproc) Threads..."
           make -j"$(expr "$(nproc)" + 1)" || make -j1 V=s
 
-      - name: Remove temporary build files
+      - name: Temporäre Build-Dateien bereinigen
         if: success()
         shell: bash
         run: |
           cd openwrt
           rm -rf build_dir tmp
 
-      - name: Organize firmware files
+      - name: Firmware-Dateien organisieren
         id: organize
         shell: bash
         run: |
           cd openwrt/bin/targets/*/*
           rm -rf packages
-          echo "::group::Firmware files"
+          echo "::group::Generierte Firmware-Dateien"
           pwd
           find . -maxdepth 1 -type f -printf '%f %s bytes\n' | sort
           echo "::endgroup::"
           echo "FIRMWARE_PATH=$PWD" >> "$GITHUB_ENV"
           echo "firmware-path=$PWD" >> "$GITHUB_OUTPUT"
 
-      - name: Extract LuCI package list from final build config
+      - name: LuCI-Paketliste aus finaler Konfiguration extrahieren
         shell: bash
         run: |
           CONFIG_BUILDINFO="${{ steps.organize.outputs.firmware-path }}/config.buildinfo"
-          echo "::group::LuCI package extraction from final config"
-          echo "Extracting LuCI packages from $CONFIG_BUILDINFO"
+          echo "::group::Extrahiere installierte LuCI-Pakete"
+          echo "Lese LuCI-Pakete aus: $CONFIG_BUILDINFO"
           if [ ! -s "$CONFIG_BUILDINFO" ]; then
-            echo "ERROR: final config.buildinfo not found or empty: $CONFIG_BUILDINFO" >&2
+            echo "FEHLER: config.buildinfo nicht gefunden oder leer: $CONFIG_BUILDINFO" >&2
             exit 1
           fi
           wc -l "$CONFIG_BUILDINFO"
@@ -358,17 +350,17 @@ jobs:
           if [ -s "$GITHUB_WORKSPACE/packages.txt" ]; then
             cat "$GITHUB_WORKSPACE/packages.txt"
           else
-            echo "No LuCI package information found in final build config." > "$GITHUB_WORKSPACE/packages.txt"
+            echo "Keine LuCI-Pakete in der Konfiguration gefunden." > "$GITHUB_WORKSPACE/packages.txt"
           fi
           echo "::endgroup::"
 
-      - name: Upload package list artifact
+      - name: Paketliste als Artefakt hochladen
         uses: actions/upload-artifact@main
         with:
           name: package-list-${{ inputs.device }}
           path: ${{ github.workspace }}/packages.txt
 
-      - name: Upload firmware artifact
+      - name: Firmware-Dateien als Artefakt hochladen
         uses: actions/upload-artifact@main
         with:
           name: firmware-${{ inputs.device }}
