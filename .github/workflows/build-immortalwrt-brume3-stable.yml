@@ -86,7 +86,7 @@ jobs:
 
         # Konfiguration bereinigen und Abhängigkeiten auflösen
         make defconfig
-        make -C target/linux olddefconfig || true
+        make target/linux olddefconfig || true
 
         echo "=== Überprüfe Status der DSA-Treiber in .config ==="
         grep -E "CONFIG_PACKAGE_kmod-(dsa|switch)" .config || true
