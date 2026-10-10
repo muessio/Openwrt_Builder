@@ -29,7 +29,7 @@ env:
 
 jobs:
   build:
-    name: 编译 ${{ matrix.device }}
+    name: Kompiliere ${{ matrix.device }}
     runs-on: ubuntu-22.04
     strategy:
       fail-fast: false
@@ -42,15 +42,15 @@ jobs:
             workflow_name: gl-mt5000_immortalwrt
 
     steps:
-    - name: Checkout
+    - name: Repository auschecken
       uses: actions/checkout@v4
 
-    - name: 释放磁盘空间
+    - name: Speicherplatz freigeben
       run: |
         sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
         sudo docker image prune --all --force
 
-    - name: 初始化环境
+    - name: Build-Umgebung initialisieren
       env:
         DEBIAN_FRONTEND: noninteractive
       run: |
@@ -65,13 +65,13 @@ jobs:
         [ -z "$INPUT_TAG2" ] && INPUT_TAG2="master"
         echo "TAG2=$INPUT_TAG2" | tr ' ' '_' >> $GITHUB_ENV
 
-    - name: 克隆源代码
+    - name: Quellcode klonen
       working-directory: /workdir
       run: |
         git clone ${{ matrix.repo_url }} --single-branch -b ${{ matrix.repo_branch }} openwrt
         ln -sf /workdir/openwrt $GITHUB_WORKSPACE/openwrt
 
-    - name: 加载自定义源
+    - name: Feeds laden und DIY-Skript Teil 1 ausführen
       run: |
         [ -e $FEEDS_CONF ] && mv $FEEDS_CONF openwrt/feeds.conf.default
         [ -f $DIY_P1_SH ] && chmod +x $DIY_P1_SH
@@ -80,10 +80,10 @@ jobs:
         [ -f $GITHUB_WORKSPACE/$DIY_P1_SH ] && $GITHUB_WORKSPACE/$DIY_P1_SH || true
         ./scripts/feeds update -a
 
-    - name: 安装源
+    - name: Feeds installieren
       run: cd openwrt && ./scripts/feeds install -a
 
-    - name: 加载自定义配置
+    - name: Benutzerdefinierte Konfiguration anwenden und DIY-Skript Teil 2 ausführen
       run: |
         [ -e $DEFAULT_SETTING ] && mv $DEFAULT_SETTING openwrt/package/default-settings-m0eak
         [ -e files ] && mv ./files openwrt/files
@@ -109,14 +109,14 @@ jobs:
         echo "=== Überprüfe Status der DSA-Treiber in .config ==="
         grep -E "CONFIG_PACKAGE_kmod-dsa.*=y|CONFIG_PACKAGE_kmod-switch.*=y" .config || true
 
-    - name: 下载软件包
+    - name: Paketquellen herunterladen (make download)
       id: package
       run: |
         cd openwrt
         make download -j8
         find dl -size -1024c -exec rm -f {} \;
 
-    - name: 编译固件
+    - name: Firmware kompilieren
       id: compile
       run: |
         cd openwrt
@@ -127,7 +127,7 @@ jobs:
         echo "device-name=$(cat DEVICE_NAME)" >> $GITHUB_OUTPUT
         echo "file-date=$(date +"%Y%m%d%H%M")" >> $GITHUB_OUTPUT
 
-    - name: 上传 bin 目录
+    - name: bin-Verzeichnis als Artefakt hochladen
       uses: actions/upload-artifact@v4
       if: steps.compile.outputs.compile == 'success' && env.UPLOAD_BIN_DIR == 'true'
       with:
