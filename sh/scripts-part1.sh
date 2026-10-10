@@ -73,19 +73,23 @@ elif [[ "$WORKFLOW_NAME" == "gl-mt5000_immortalwrt" || "$WORKFLOW_NAME" == "GL-M
             done
         fi
 
-        # 4. Kernel-Patches für Realtek Switch in ALLE aktiven mediatek Patch-Ordner kopieren
+        # 4. Kernel-Patches für Realtek Switch selektiv kopieren (nur wenn passende Kernelversion vorhanden)
         for pdir in target/linux/mediatek/patches-*; do
             if [ -d "$pdir" ]; then
-                cp -f "$GL_TMP_DIR"/target/linux/mediatek/patches-*/*rtl8366* "$pdir"/ 2>/dev/null || true
-                cp -f "$GL_TMP_DIR"/target/linux/mediatek/patches-*/*realtek* "$pdir"/ 2>/dev/null || true
+                kver=$(basename "$pdir" | sed 's/patches-//')
+                # Nur kopieren, wenn der Quellordner von GL.iNet für denselben Kernel existiert
+                if [ -d "$GL_TMP_DIR/target/linux/mediatek/patches-$kver" ]; then
+                    cp -f "$GL_TMP_DIR/target/linux/mediatek/patches-$kver"/*rtl8366* "$pdir"/ 2>/dev/null || true
+                    cp -f "$GL_TMP_DIR/target/linux/mediatek/patches-$kver"/*realtek* "$pdir"/ 2>/dev/null || true
+                fi
             fi
         done
 
-        # 5. Kernel-Treiber für DSA & RTL8366UB direkt in alle target Kernel-Configs schreiben
+        # 5. Kernel-Treiber für DSA & RTL8366 sauber deklarieren
         for cfg in target/linux/mediatek/filogic/config-* target/linux/mediatek/config-*; do
             if [ -f "$cfg" ]; then
                 sed -i '/CONFIG_NET_DSA/d' "$cfg"
-                sed -i '/CONFIG_NET_DSA_REALTEK/d' "$cfg"
+                sed -i '/CONFIG_FIXED_PHY/d' "$cfg"
                 cat << 'EOF' >> "$cfg"
 CONFIG_NET_DSA=y
 CONFIG_NET_DSA_TAG_RTL4_A=y
@@ -96,6 +100,9 @@ CONFIG_NET_DSA_REALTEK_RTL8366UB=y
 CONFIG_NET_DSA_REALTEK_SMI=y
 CONFIG_NET_DSA_REALTEK_MDIO=y
 CONFIG_FIXED_PHY=y
+CONFIG_USB_NET_DRIVERS=y
+CONFIG_USB_RTL8152=y
+CONFIG_USB_NET_CDC_NCM=y
 EOF
             fi
         done
@@ -104,7 +111,9 @@ EOF
     fi
 
     # Footstrap Theme Feed hinzufügen
-    echo "src-git footstrap https://github.com/VizzleTF/luci-theme-footstrap.git" >> "feeds.conf.default"
+    if ! grep -q "luci-theme-footstrap" feeds.conf.default 2>/dev/null; then
+        echo "src-git footstrap https://github.com/VizzleTF/luci-theme-footstrap.git" >> "feeds.conf.default"
+    fi
 
     set_default_ip "192.168.100.1" "mt5000-immortalwrt"
 fi
