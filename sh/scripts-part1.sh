@@ -1,10 +1,5 @@
 #!/bin/bash
 #
-# Copyright (c) 2019-2020 P3TERX <https://p3terx.com>
-#
-# This is free software, licensed under the MIT License.
-# See /LICENSE for more information.
-#
 # Dateiname: scripts-part1.sh
 # Beschreibung: OpenWrt DIY Skript Teil 1 (wird vor dem Aktualisieren der Feeds ausgeführt)
 #
@@ -21,6 +16,7 @@ set_default_ip() {
     echo "$label: Standard-IP geändert auf $ip"
 }
 
+# --- Andere Zielgeräte ---
 if [[ "$WORKFLOW_NAME" == "AXT-1800" || "$WORKFLOW_NAME" == "JDC-AX6600" ]]; then
     if [[ "$WORKFLOW_NAME" == "AXT-1800" ]]; then
         set_default_ip "192.168.8.1" "AXT-1800"
@@ -44,9 +40,16 @@ elif [[ "$WORKFLOW_NAME" == "GL-MT3600BE" ]]; then
     curl -fL "$CUSTOM_DTS_URL" -o "$CUSTOM_DTS_TARGET" 2>/dev/null || true
     set_default_ip "192.168.9.1" "mt3600be"
 
-# 1. DEIN ORIGINALER WORKFLOW (Build filogic.yml / GL-MT5000 / ImmortalWrt Basis) - 100% UNBERÜHRT
-elif [[ "$WORKFLOW_NAME" == "gl-mt5000_immortalwrt" || "$WORKFLOW_NAME" == "GL-MT5000" || "$WORKFLOW_NAME" =~ "GL-MT5000" ]]; then
-    echo ">>> Gerät erkannt: $WORKFLOW_NAME. Importiere GL-MT5000 Unterstützung und Realtek RTL8366 Treiber <<<"
+# 1. ORIGINALE GL.iNet PIPELINE (Build filogic.yml -> workflow_name: GL-MT5000)
+# Klont bereits direkt GLiNet-Tech/openwrt.git -> Keine Injektion erforderlich!
+elif [[ "$WORKFLOW_NAME" == "GL-MT5000" ]]; then
+    echo ">>> Workflow GL-MT5000 (Filogic Quellbaum) aktiv. Basis-Setup ohne Injektion <<<"
+    set_default_ip "192.168.100.1" "GL-MT5000-native"
+
+# 2. DIE STANDALONE-WORKFLOWS (ImmortalWrt Master/Stable & OpenWrt 25.12)
+# Diese klonen Upstream und brauchen die Injektion aus GL.iNet
+elif [[ "$WORKFLOW_NAME" == "Immortalwrt Brume 3 stable" || "$WORKFLOW_NAME" == "OpenWrt Brume 3 stable" || "$WORKFLOW_NAME" == "gl-mt5000_immortalwrt" || "$WORKFLOW_NAME" == "Build immortalwrt" ]]; then
+    echo ">>> Workflow: $WORKFLOW_NAME -> Führe GL.iNet Treiberinjektion (DTS / RTL8366) durch <<<"
 
     GL_TMP_DIR="/tmp/glinet_mt5000_source"
     rm -rf "$GL_TMP_DIR"
@@ -58,7 +61,7 @@ elif [[ "$WORKFLOW_NAME" == "gl-mt5000_immortalwrt" || "$WORKFLOW_NAME" == "GL-M
         cp -f "$GL_TMP_DIR"/target/linux/mediatek/dts/*gl-mt5000* target/linux/mediatek/dts/ 2>/dev/null || true
         cp -f "$GL_TMP_DIR"/target/linux/mediatek/files/arch/arm64/boot/dts/mediatek/*gl-mt5000* target/linux/mediatek/files/arch/arm64/boot/dts/mediatek/ 2>/dev/null || true
 
-        # 2. Base-Files und Board-Erkennung (02_network) importieren
+        # 2. Base-Files und Board-Erkennung übertragen
         mkdir -p target/linux/mediatek/filogic/base-files
         cp -rf "$GL_TMP_DIR"/target/linux/mediatek/filogic/base-files/* target/linux/mediatek/filogic/base-files/ 2>/dev/null || true
 
@@ -74,9 +77,8 @@ elif [[ "$WORKFLOW_NAME" == "gl-mt5000_immortalwrt" || "$WORKFLOW_NAME" == "GL-M
             done
         fi
 
-        # 4. Kernel-Patches für Realtek RTL8366 versionsunabhängig übertragen
-        GL_PATCH_DIR=$(find "$GL_TMP_DIR"/target/linux/mediatek/ -maxdepth 1 -type d -name "patches-*" | head -n 1)
-
+        # 4. Kernel-Patches für Realtek RTL8366 übertragen
+        GL_PATCH_DIR=$(find "$GL_TMP_DIR"/target/linux/mediatek/ -maxdepth 1 -type d -name "patches-*" 2>/dev/null | head -n 1)
         if [ -n "$GL_PATCH_DIR" ] && [ -d "$GL_PATCH_DIR" ]; then
             for pdir in target/linux/mediatek/patches-*; do
                 if [ -d "$pdir" ]; then
@@ -91,7 +93,7 @@ elif [[ "$WORKFLOW_NAME" == "gl-mt5000_immortalwrt" || "$WORKFLOW_NAME" == "GL-M
         mkdir -p target/linux/mediatek/files/drivers/net/dsa/realtek
         find "$GL_TMP_DIR" -type f \( -name "*rtl8366*" -o -name "*realtek*" \) -path "*/drivers/net/dsa/*" -exec cp -f {} target/linux/mediatek/files/drivers/net/dsa/realtek/ \; 2>/dev/null || true
 
-        # 5. Kernel-Konfiguration anpassen und Kconfig-Prompts neutralisieren
+        # 5. Kernel-Konfiguration anpassen
         for cfg in target/linux/mediatek/filogic/config-* target/linux/mediatek/config-*; do
             if [ -f "$cfg" ]; then
                 sed -i '/CONFIG_NET_DSA/d' "$cfg"
@@ -136,131 +138,7 @@ EOF
         echo "src-git footstrap https://github.com/VizzleTF/luci-theme-footstrap.git" >> "feeds.conf.default"
     fi
 
-    set_default_ip "192.168.100.1" "mt5000-immortalwrt"
-
-# 2. NEUER SEPARATER WORKFLOW: ImmortalWrt Brume 3 stable (25.12)
-elif [[ "$WORKFLOW_NAME" == "Immortalwrt Brume 3 stable" ]]; then
-    echo ">>> Gerät erkannt: Immortalwrt Brume 3 stable <<<"
-
-    GL_TMP_DIR="/tmp/glinet_mt5000_imm_stable"
-    rm -rf "$GL_TMP_DIR"
-    git clone --depth 1 -b mt5000 https://github.com/GLiNet-Tech/openwrt.git "$GL_TMP_DIR"
-
-    if [[ -d "$GL_TMP_DIR" ]]; then
-        mkdir -p target/linux/mediatek/dts target/linux/mediatek/files/arch/arm64/boot/dts/mediatek
-        cp -f "$GL_TMP_DIR"/target/linux/mediatek/dts/*gl-mt5000* target/linux/mediatek/dts/ 2>/dev/null || true
-        cp -f "$GL_TMP_DIR"/target/linux/mediatek/files/arch/arm64/boot/dts/mediatek/*gl-mt5000* target/linux/mediatek/files/arch/arm64/boot/dts/mediatek/ 2>/dev/null || true
-
-        mkdir -p target/linux/mediatek/filogic/base-files
-        cp -rf "$GL_TMP_DIR"/target/linux/mediatek/filogic/base-files/* target/linux/mediatek/filogic/base-files/ 2>/dev/null || true
-
-        if ! grep -q "glinet_gl-mt5000" target/linux/mediatek/image/filogic.mk 2>/dev/null; then
-            for mk in "$GL_TMP_DIR"/target/linux/mediatek/image/*.mk; do
-                if grep -q "glinet_gl-mt5000" "$mk" 2>/dev/null; then
-                    sed -n '/define Device\/glinet_gl-mt5000/,/endef/p' "$mk" >> target/linux/mediatek/image/filogic.mk
-                    echo '$(eval $(call BuildImage,glinet_gl-mt5000))' >> target/linux/mediatek/image/filogic.mk
-                    echo 'TARGET_DEVICES += glinet_gl-mt5000' >> target/linux/mediatek/image/filogic.mk
-                    break
-                fi
-            done
-        fi
-
-        mkdir -p target/linux/mediatek/files/drivers/net/dsa/realtek
-        find "$GL_TMP_DIR" -type f \( -name "*rtl8366*" -o -name "*realtek*" \) -path "*/drivers/net/dsa/*" -exec cp -f {} target/linux/mediatek/files/drivers/net/dsa/realtek/ \; 2>/dev/null || true
-
-        for cfg in target/linux/mediatek/filogic/config-* target/linux/mediatek/config-*; do
-            if [ -f "$cfg" ]; then
-                sed -i '/CONFIG_NET_DSA/d' "$cfg"
-                sed -i '/CONFIG_FIXED_PHY/d' "$cfg"
-                cat << 'EOF' >> "$cfg"
-CONFIG_NET_DSA=y
-CONFIG_NET_DSA_TAG_RTL4_A=y
-CONFIG_NET_DSA_TAG_NONE=y
-CONFIG_NET_DSA_REALTEK=y
-CONFIG_NET_DSA_REALTEK_RTL8366RB=y
-CONFIG_NET_DSA_REALTEK_RTL8366UB=y
-CONFIG_NET_DSA_REALTEK_SMI=y
-CONFIG_NET_DSA_REALTEK_MDIO=y
-CONFIG_FIXED_PHY=y
-CONFIG_NET_DSA_AN8855=n
-CONFIG_NET_DSA_BCM_SF2=n
-CONFIG_NET_DSA_LOOP=n
-CONFIG_NET_DSA_MV88E6060=n
-CONFIG_NET_DSA_MV88E6XXX=n
-CONFIG_NET_DSA_QCA8K=n
-CONFIG_NET_DSA_REALTEK_RTL8365MB=n
-EOF
-            fi
-        done
-
-        rm -rf "$GL_TMP_DIR"
-    fi
-
-    if ! grep -q "luci-theme-footstrap" feeds.conf.default 2>/dev/null; then
-        echo "src-git footstrap https://github.com/VizzleTF/luci-theme-footstrap.git" >> "feeds.conf.default"
-    fi
-
-    set_default_ip "192.168.100.1" "mt5000-immortalwrt-stable"
-
-# 3. NEUER SEPARATER WORKFLOW: OpenWrt Brume 3 stable (25.12)
-elif [[ "$WORKFLOW_NAME" == "OpenWrt Brume 3 stable" ]]; then
-    echo ">>> Gerät erkannt: OpenWrt Brume 3 stable (Upstream 25.12) <<<"
-
-    GL_TMP_DIR="/tmp/glinet_mt5000_openwrt_stable"
-    rm -rf "$GL_TMP_DIR"
-    git clone --depth 1 -b mt5000 https://github.com/GLiNet-Tech/openwrt.git "$GL_TMP_DIR"
-
-    if [[ -d "$GL_TMP_DIR" ]]; then
-        mkdir -p target/linux/mediatek/dts target/linux/mediatek/files/arch/arm64/boot/dts/mediatek
-        cp -f "$GL_TMP_DIR"/target/linux/mediatek/dts/*gl-mt5000* target/linux/mediatek/dts/ 2>/dev/null || true
-        cp -f "$GL_TMP_DIR"/target/linux/mediatek/files/arch/arm64/boot/dts/mediatek/*gl-mt5000* target/linux/mediatek/files/arch/arm64/boot/dts/mediatek/ 2>/dev/null || true
-
-        mkdir -p target/linux/mediatek/filogic/base-files
-        cp -rf "$GL_TMP_DIR"/target/linux/mediatek/filogic/base-files/* target/linux/mediatek/filogic/base-files/ 2>/dev/null || true
-
-        if ! grep -q "glinet_gl-mt5000" target/linux/mediatek/image/filogic.mk 2>/dev/null; then
-            for mk in "$GL_TMP_DIR"/target/linux/mediatek/image/*.mk; do
-                if grep -q "glinet_gl-mt5000" "$mk" 2>/dev/null; then
-                    sed -n '/define Device\/glinet_gl-mt5000/,/endef/p' "$mk" >> target/linux/mediatek/image/filogic.mk
-                    echo '$(eval $(call BuildImage,glinet_gl-mt5000))' >> target/linux/mediatek/image/filogic.mk
-                    echo 'TARGET_DEVICES += glinet_gl-mt5000' >> target/linux/mediatek/image/filogic.mk
-                    break
-                fi
-            done
-        fi
-
-        mkdir -p target/linux/mediatek/files/drivers/net/dsa/realtek
-        find "$GL_TMP_DIR" -type f \( -name "*rtl8366*" -o -name "*realtek*" \) -path "*/drivers/net/dsa/*" -exec cp -f {} target/linux/mediatek/files/drivers/net/dsa/realtek/ \; 2>/dev/null || true
-
-        for cfg in target/linux/mediatek/filogic/config-* target/linux/mediatek/config-*; do
-            if [ -f "$cfg" ]; then
-                sed -i '/CONFIG_NET_DSA/d' "$cfg"
-                sed -i '/CONFIG_FIXED_PHY/d' "$cfg"
-                cat << 'EOF' >> "$cfg"
-CONFIG_NET_DSA=y
-CONFIG_NET_DSA_TAG_RTL4_A=y
-CONFIG_NET_DSA_TAG_NONE=y
-CONFIG_NET_DSA_REALTEK=y
-CONFIG_NET_DSA_REALTEK_RTL8366RB=y
-CONFIG_NET_DSA_REALTEK_RTL8366UB=y
-CONFIG_NET_DSA_REALTEK_SMI=y
-CONFIG_NET_DSA_REALTEK_MDIO=y
-CONFIG_FIXED_PHY=y
-CONFIG_NET_DSA_AN8855=n
-CONFIG_NET_DSA_BCM_SF2=n
-CONFIG_NET_DSA_LOOP=n
-CONFIG_NET_DSA_MV88E6060=n
-CONFIG_NET_DSA_MV88E6XXX=n
-CONFIG_NET_DSA_QCA8K=n
-CONFIG_NET_DSA_REALTEK_RTL8365MB=n
-EOF
-            fi
-        done
-
-        rm -rf "$GL_TMP_DIR"
-    fi
-
-    set_default_ip "192.168.100.1" "mt5000-openwrt-stable"
+    set_default_ip "192.168.100.1" "$WORKFLOW_NAME"
 fi
 
 echo "--- DIY Part 1: Skriptausführung beendet ---"
