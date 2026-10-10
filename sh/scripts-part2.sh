@@ -5,8 +5,8 @@
 # This is free software, licensed under the MIT License.
 # See /LICENSE for more information.
 #
-# File name: scripts-part2.sh
-# Description: OpenWrt DIY script part 2 (After Update feeds)
+# Dateiname: scripts-part2.sh
+# Beschreibung: OpenWrt DIY Skript Teil 2 (wird nach dem Aktualisieren der Feeds ausgeführt)
 #
 
 TARGET_DIR="${PWD}/package/custom"
@@ -99,10 +99,10 @@ clone_custom_repos() {
     done
 }
 
-echo "--- DIY Part 2 脚本开始执行 ---"
+echo "--- DIY Part 2: Skriptausführung gestartet ---"
 echo "WORKFLOW_NAME: $WORKFLOW_NAME"
 
-if [[ "$WORKFLOW_NAME" == "gl-mt5000_immortalwrt" || "$WORKFLOW_NAME" == "GL-MT5000" ]]; then
+if [[ "$WORKFLOW_NAME" == "gl-mt5000_immortalwrt" || "$WORKFLOW_NAME" == "GL-MT5000" || "$WORKFLOW_NAME" == "Immortalwrt Brume 3 stable" || "$WORKFLOW_NAME" == *"Brume 3"* ]]; then
     echo ">>> Konfiguriere GL-MT5000 (ImmortalWrt) Board- und Treibereinstellungen <<<"
 
     # 1. 02_network patchen
@@ -147,11 +147,10 @@ EOF
     # 3. Kernel- und Modulpakete für Realtek Switch, USB Mass Storage, Dateisysteme & Cake aktivieren
     cat << 'EOF' >> .config
 # --- Switch / DSA Treiber ---
+CONFIG_PACKAGE_kmod-dsa=y
 CONFIG_PACKAGE_kmod-dsa-realtek=y
-CONFIG_PACKAGE_kmod-dsa-realtek-rtl8366rb=y
-CONFIG_PACKAGE_kmod-dsa-realtek-rtl8366ub=y
-CONFIG_PACKAGE_kmod-dsa-realtek-smi=y
-CONFIG_PACKAGE_kmod-dsa-realtek-mdio=y
+CONFIG_PACKAGE_kmod-dsa-rtl8366rb=y
+CONFIG_PACKAGE_kmod-switch-rtl8366-smi=y
 CONFIG_PACKAGE_kmod-dsa-tag-rtl4-a=y
 
 # --- USB Storage & Block Devices ---
@@ -184,7 +183,7 @@ CONFIG_PACKAGE_tc-tiny=y
 CONFIG_PACKAGE_luci-theme-footstrap=y
 EOF
 
-    # 4. WAN-Rescue Firewall Regel hinterlegen
+    # 4. WAN-Rescue Firewall-Regel hinterlegen
     mkdir -p package/base-files/files/etc/uci-defaults/
     cat << 'EOF' > package/base-files/files/etc/uci-defaults/99-gl-mt5000-wan-rescue
 uci -q batch << 'UCIBATCH'
@@ -215,4 +214,4 @@ else
     clone_custom_repos
 fi
 
-echo "--- DIY Part 2 脚本执行完毕 ---"
+echo "--- DIY Part 2: Skriptausführung beendet ---"
