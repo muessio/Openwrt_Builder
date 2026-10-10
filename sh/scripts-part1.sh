@@ -5,11 +5,11 @@
 # This is free software, licensed under the MIT License.
 # See /LICENSE for more information.
 #
-# File name: scripts-part1.sh
-# Description: OpenWrt DIY script part 1 (Before Update feeds)
+# Dateiname: scripts-part1.sh
+# Beschreibung: OpenWrt DIY Skript Teil 1 (wird vor dem Aktualisieren der Feeds ausgeführt)
 #
 
-echo "--- DIY Part 1 脚本开始执行 ---"
+echo "--- DIY Part 1: Skriptausführung gestartet ---"
 echo "WORKFLOW_NAME: $WORKFLOW_NAME"
 echo "TAG2: $TAG2"
 echo "------------------------------------------"
@@ -18,7 +18,7 @@ set_default_ip() {
     local ip="$1"
     local label="$2"
     sed -i "s/192.168.1.1/$ip/g" package/base-files/files/bin/config_generate
-    echo "$label IP 修改为 $ip"
+    echo "$label: Standard-IP geändert auf $ip"
 }
 
 if [[ "$WORKFLOW_NAME" == "AXT-1800" || "$WORKFLOW_NAME" == "JDC-AX6600" ]]; then
@@ -44,8 +44,8 @@ elif [[ "$WORKFLOW_NAME" == "GL-MT3600BE" ]]; then
     curl -fL "$CUSTOM_DTS_URL" -o "$CUSTOM_DTS_TARGET" 2>/dev/null || true
     set_default_ip "192.168.9.1" "mt3600be"
 
-elif [[ "$WORKFLOW_NAME" == "gl-mt5000_immortalwrt" || "$WORKFLOW_NAME" == "GL-MT5000" ]]; then
-    echo ">>> 检测到设备: $WORKFLOW_NAME。导入 GL-MT5000 支持与 Realtek RTL8366 驱动 <<<"
+elif [[ "$WORKFLOW_NAME" == "gl-mt5000_immortalwrt" || "$WORKFLOW_NAME" == "GL-MT5000" || "$WORKFLOW_NAME" == "Immortalwrt Brume 3 stable" || "$WORKFLOW_NAME" == *"Brume 3"* ]]; then
+    echo ">>> Gerät erkannt: $WORKFLOW_NAME. Importiere GL-MT5000 Unterstützung und Realtek RTL8366 Treiber <<<"
 
     GL_TMP_DIR="/tmp/glinet_mt5000_source"
     rm -rf "$GL_TMP_DIR"
@@ -130,7 +130,7 @@ EOF
         rm -rf "$GL_TMP_DIR"
     fi
 
-    # Footstrap Theme Feed hinzufügen
+    # Footstrap-Theme Feed hinzufügen
     if ! grep -q "luci-theme-footstrap" feeds.conf.default 2>/dev/null; then
         echo "src-git footstrap https://github.com/VizzleTF/luci-theme-footstrap.git" >> "feeds.conf.default"
     fi
@@ -138,4 +138,4 @@ EOF
     set_default_ip "192.168.100.1" "mt5000-immortalwrt"
 fi
 
-echo "--- DIY Part 1 脚本执行完毕 ---"
+echo "--- DIY Part 1: Skriptausführung beendet ---"
