@@ -45,7 +45,7 @@ elif [[ "$WORKFLOW_NAME" == "GL-MT3600BE" ]]; then
     set_default_ip "192.168.9.1" "mt3600be"
 
 elif [[ "$WORKFLOW_NAME" == "gl-mt5000_immortalwrt" || "$WORKFLOW_NAME" == "GL-MT5000" ]]; then
-    echo ">>> 检测到设备: $WORKFLOW_NAME。导入 GL-MT5000 支持与 Realtek RTL8366UB 驱动 <<<"
+    echo ">>> 检测到设备: $WORKFLOW_NAME。导入 GL-MT5000 支持与 Realtek RTL8366 驱动 <<<"
 
     GL_TMP_DIR="/tmp/glinet_mt5000_source"
     rm -rf "$GL_TMP_DIR"
@@ -57,7 +57,7 @@ elif [[ "$WORKFLOW_NAME" == "gl-mt5000_immortalwrt" || "$WORKFLOW_NAME" == "GL-M
         cp -f "$GL_TMP_DIR"/target/linux/mediatek/dts/*gl-mt5000* target/linux/mediatek/dts/ 2>/dev/null || true
         cp -f "$GL_TMP_DIR"/target/linux/mediatek/files/arch/arm64/boot/dts/mediatek/*gl-mt5000* target/linux/mediatek/files/arch/arm64/boot/dts/mediatek/ 2>/dev/null || true
 
-        # 2. Base-Files und Netzwerk-Boarderkennung (02_network) importieren
+        # 2. Base-Files und Board-Erkennung (02_network) importieren
         mkdir -p target/linux/mediatek/filogic/base-files
         cp -rf "$GL_TMP_DIR"/target/linux/mediatek/filogic/base-files/* target/linux/mediatek/filogic/base-files/ 2>/dev/null || true
 
@@ -73,7 +73,7 @@ elif [[ "$WORKFLOW_NAME" == "gl-mt5000_immortalwrt" || "$WORKFLOW_NAME" == "GL-M
             done
         fi
 
-        # 4. Kernel-Patches für Realtek RTL8366UB versionsunabhängig übertragen
+        # 4. Kernel-Patches für Realtek RTL8366 versionsunabhängig übertragen
         GL_PATCH_DIR=$(find "$GL_TMP_DIR"/target/linux/mediatek/ -maxdepth 1 -type d -name "patches-*" | head -n 1)
 
         if [ -n "$GL_PATCH_DIR" ] && [ -d "$GL_PATCH_DIR" ]; then
@@ -86,11 +86,11 @@ elif [[ "$WORKFLOW_NAME" == "gl-mt5000_immortalwrt" || "$WORKFLOW_NAME" == "GL-M
             done
         fi
 
-        # 4b. Treiberdateien direkt in den Kernel-Quellbaum spiegeln
+        # 4b. Treiber-Quellen direkt spiegeln
         mkdir -p target/linux/mediatek/files/drivers/net/dsa/realtek
         find "$GL_TMP_DIR" -type f \( -name "*rtl8366*" -o -name "*realtek*" \) -path "*/drivers/net/dsa/*" -exec cp -f {} target/linux/mediatek/files/drivers/net/dsa/realtek/ \; 2>/dev/null || true
 
-        # 5. Kernel-Symbole in allen Target-Configs verankern und Kconfig-Prompts neutralisieren
+        # 5. Kernel-Konfiguration anpassen und Kconfig-Prompts neutralisieren
         for cfg in target/linux/mediatek/filogic/config-* target/linux/mediatek/config-*; do
             if [ -f "$cfg" ]; then
                 sed -i '/CONFIG_NET_DSA/d' "$cfg"
@@ -126,15 +126,6 @@ CONFIG_NET_DSA_VITESSE_VSC73XX=n
 EOF
             fi
         done
-
-        # 6. Paket-Selektion direkt für OpenWrt vorschreiben (RootFS-Integration)
-        mkdir -p package/base-files/files/etc/modules.d
-        cat << 'EOF' >> .config 2>/dev/null || true
-CONFIG_PACKAGE_kmod-dsa-realtek=y
-CONFIG_PACKAGE_kmod-dsa-realtek-rtl8366ub=y
-CONFIG_PACKAGE_kmod-dsa-tag-rtl4-a=y
-CONFIG_PACKAGE_kmod-switch-rtl8366-smi=y
-EOF
 
         rm -rf "$GL_TMP_DIR"
     fi
