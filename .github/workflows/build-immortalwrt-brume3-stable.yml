@@ -5,12 +5,13 @@ on:
   workflow_dispatch:
 
 env:
+  WORKFLOW_NAME: "Immortalwrt Brume 3 stable"
   REPO_URL: https://github.com/immortalwrt/immortalwrt.git
   REPO_BRANCH: openwrt-25.12
   FEEDS_CONF: feeds.conf.default
-  CONFIG_FILE: immortalwrt.config
-  DIY_P1_SH: sh/scripts-part1.sh
-  DIY_P2_SH: sh/scripts-part2.sh
+  CONFIG_FILE: ./config/immortalwrt.config
+  DIY_P1_SH: ./sh/scripts-part1.sh
+  DIY_P2_SH: ./sh/scripts-part2.sh
   UPLOAD_BIN_DIR: false
   UPLOAD_FIRMWARE: true
   UPLOAD_RELEASE: true
@@ -42,7 +43,7 @@ jobs:
       run: |
         sudo rm -rf /etc/apt/sources.list.d/* /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
         sudo -E apt-get -qq update
-        sudo -E apt-get -qq install -y $(cat package/depends-ubuntu-2204)
+        sudo -E apt-get -qq install -y $(cat package/depends-ubuntu-2204) || sudo -E apt-get -qq install -y build-essential libncurses5-dev gawk git subversion libssl-dev gettext zlib1g-dev swig python3-distutils libelf-dev
         sudo -E apt-get -qq autoremove --purge
         sudo -E apt-get -qq clean
         sudo timedatectl set-timezone "$TZ"
@@ -53,12 +54,12 @@ jobs:
       working-directory: /workdir
       run: |
         df -hT $PWD
-        git clone $REPO_URL -b$REPO_BRANCH openwrt
+        git clone $REPO_URL -b $REPO_BRANCH openwrt
         ln -sf /workdir/openwrt $GITHUB_WORKSPACE/openwrt
 
     - name: Feeds laden und DIY-Skript Teil 1 ausführen
       run: |
-        [ -e $FEEDS_CONF ] && cp$FEEDS_CONF openwrt/feeds.conf.default
+        [ -e $FEEDS_CONF ] && cp $FEEDS_CONF openwrt/feeds.conf.default
         chmod +x $DIY_P1_SH
         cd openwrt
         $GITHUB_WORKSPACE/$DIY_P1_SH
@@ -69,7 +70,7 @@ jobs:
 
     - name: Benutzerdefinierte Konfiguration anwenden und DSA-Treiber injizieren
       run: |
-        [ -e $CONFIG_FILE ] && cp$CONFIG_FILE openwrt/.config
+        [ -e $CONFIG_FILE ] && cp $CONFIG_FILE openwrt/.config
         chmod +x $DIY_P2_SH
         cd openwrt
         $GITHUB_WORKSPACE/$DIY_P2_SH
@@ -86,3 +87,66 @@ jobs:
         # Konfiguration bereinigen und Abhängigkeiten auflösen
         make defconfig
         make -C target/linux olddefconfig || true
+
+        echo "=== Überprüfe Status der DSA-Treiber in .config ==="
+        grep -E "CONFIG_PACKAGE_kmod-(dsa|switch)" .config || true
+
+    - name: Paketquellen herunterladen (make download)
+      id: package
+      run: |
+        cd openwrt
+        make download -j8
+        find dl -size -1024c -exec ls -l {} \;
+        find dl -size -1024c -exec rm -f {} \;
+
+    - name: Firmware kompilieren
+      id: compile
+      run: |
+        cd openwrt
+        echo -e "$(nproc) Thread(s) beim Kompilieren"
+        make -j$(nproc) || make -j1 V=s target/linux/compile
+        echo "status=success" >> $GITHUB_OUTPUT
+        grep "CONFIG_TARGET=[a-z0-9]" .config | head -n 1 | sed 's/CONFIG_TARGET=/DEVICE_TARGET=/' >> $GITHUB_ENV
+        grep "CONFIG_TARGET_SUBTARGET=[a-z0-9]" .config | head -n 1 | sed 's/CONFIG_TARGET_SUBTARGET=/DEVICE_SUBTARGET=/' >> $GITHUB_ENV
+
+    - name: Firmware-Dateien organisieren
+      id: organize
+      if: env.UPLOAD_FIRMWARE == 'true' && !cancelled()
+      run: |
+        cd openwrt/bin/targets/*/*
+        rm -rf packages
+        echo "FIRMWARE=$PWD" >> $GITHUB_ENV
+        echo "status=success" >> $GITHUB_OUTPUT
+
+    - name: bin-Verzeichnis als Artefakt hochladen
+      uses: actions/upload-artifact@v4
+      if: steps.compile.outputs.status == 'success' && env.UPLOAD_BIN_DIR == 'true'
+      with:
+        name: OpenWrt_bin_${{ env.DEVICE_TARGET }}_${{ env.DEVICE_SUBTARGET }}_${{ env.FILE_DATE }}
+        path: openwrt/bin
+
+    - name: Firmware-Dateien als Artefakt hochladen
+      uses: actions/upload-artifact@v4
+      if: steps.organize.outputs.status == 'success' && !cancelled()
+      with:
+        name: OpenWrt_firmware_${{ env.DEVICE_TARGET }}_${{ env.DEVICE_SUBTARGET }}_${{ env.FILE_DATE }}
+        path: ${{ env.FIRMWARE }}
+
+    - name: Release-Tag erstellen
+      id: tag
+      if: env.UPLOAD_RELEASE == 'true' && !cancelled()
+      run: |
+        echo "release_tag=$(date +"%Y.%m.%d-%H%M")-stable" >> $GITHUB_OUTPUT
+        touch release.txt
+        echo "ImmortalWrt Stable Build (openwrt-25.12) für GL-MT5000" >> release.txt
+        echo "status=success" >> $GITHUB_OUTPUT
+
+    - name: Release auf GitHub veröffentlichen
+      uses: softprops/action-gh-release@v2
+      if: steps.tag.outputs.release_tag && !cancelled()
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        tag_name: ${{ steps.tag.outputs.release_tag }}
+        body_path: release.txt
+        files: ${{ env.FIRMWARE }}/*
