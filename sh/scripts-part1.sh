@@ -73,18 +73,25 @@ elif [[ "$WORKFLOW_NAME" == "gl-mt5000_immortalwrt" || "$WORKFLOW_NAME" == "GL-M
             done
         fi
 
-        # 4. Kernel-Patches für Realtek Switch selektiv kopieren (nur bei passender Kernelversion)
-        for pdir in target/linux/mediatek/patches-*; do
-            if [ -d "$pdir" ]; then
-                kver=$(basename "$pdir" | sed 's/patches-//')
-                if [ -d "$GL_TMP_DIR/target/linux/mediatek/patches-$kver" ]; then
-                    cp -f "$GL_TMP_DIR/target/linux/mediatek/patches-$kver"/*rtl8366* "$pdir"/ 2>/dev/null || true
-                    cp -f "$GL_TMP_DIR/target/linux/mediatek/patches-$kver"/*realtek* "$pdir"/ 2>/dev/null || true
-                fi
-            fi
-        done
+        # 4. Kernel-Patches für RTL8366UB versionsunabhängig übertragen
+        # Findet den Quell-Patchordner bei GL.iNet (egal ob patches-5.4 oder 5.15)
+        GL_PATCH_DIR=$(find "$GL_TMP_DIR"/target/linux/mediatek/ -maxdepth 1 -type d -name "patches-*" | head -n 1)
 
-        # 5. Kernel-Treiber für DSA & RTL8366 deklarieren + neue DSA-Abfragen mit Defaults belegen
+        if [ -n "$GL_PATCH_DIR" ] && [ -d "$GL_PATCH_DIR" ]; then
+            for pdir in target/linux/mediatek/patches-*; do
+                if [ -d "$pdir" ]; then
+                    echo "Kopiere Realtek-Patches aus $GL_PATCH_DIR nach $pdir"
+                    cp -f "$GL_PATCH_DIR"/*rtl8366* "$pdir"/ 2>/dev/null || true
+                    cp -f "$GL_PATCH_DIR"/*realtek* "$pdir"/ 2>/dev/null || true
+                fi
+            done
+        fi
+
+        # 4b. Treiber-Quellcode direkt in den mediatek/files Kernel-Baum spiegeln (Fallback falls Patching übersprungen wird)
+        mkdir -p target/linux/mediatek/files/drivers/net/dsa/realtek
+        find "$GL_TMP_DIR" -type f \( -name "*rtl8366*" -o -name "*realtek*" \) -path "*/drivers/net/dsa/*" -exec cp -f {} target/linux/mediatek/files/drivers/net/dsa/realtek/ \; 2>/dev/null || true
+
+        # 5. Kernel-Treiber für DSA & RTL8366 deklarieren + interaktive Abfragen abfangen
         for cfg in target/linux/mediatek/filogic/config-* target/linux/mediatek/config-*; do
             if [ -f "$cfg" ]; then
                 sed -i '/CONFIG_NET_DSA/d' "$cfg"
@@ -102,7 +109,6 @@ CONFIG_FIXED_PHY=y
 CONFIG_USB_NET_DRIVERS=y
 CONFIG_USB_RTL8152=y
 CONFIG_USB_NET_CDC_NCM=y
-# Interaktive syncconfig Prompts im neuen Kernel 6.18 abfangen:
 CONFIG_NET_DSA_AN8855=n
 CONFIG_NET_DSA_BCM_SF2=n
 CONFIG_NET_DSA_LOOP=n
