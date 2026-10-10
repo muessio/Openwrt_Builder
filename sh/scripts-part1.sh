@@ -52,16 +52,16 @@ elif [[ "$WORKFLOW_NAME" == "gl-mt5000_immortalwrt" || "$WORKFLOW_NAME" == "GL-M
     git clone --depth 1 -b mt5000 https://github.com/GLiNet-Tech/openwrt.git "$GL_TMP_DIR"
 
     if [[ -d "$GL_TMP_DIR" ]]; then
-        # 1. DTS Dateien importieren
+        # 1. DTS-Dateien importieren
         mkdir -p target/linux/mediatek/dts target/linux/mediatek/files/arch/arm64/boot/dts/mediatek
         cp -f "$GL_TMP_DIR"/target/linux/mediatek/dts/*gl-mt5000* target/linux/mediatek/dts/ 2>/dev/null || true
         cp -f "$GL_TMP_DIR"/target/linux/mediatek/files/arch/arm64/boot/dts/mediatek/*gl-mt5000* target/linux/mediatek/files/arch/arm64/boot/dts/mediatek/ 2>/dev/null || true
 
-        # 2. Base-Files und Netzwerk-Profile
+        # 2. Base-Files und Netzwerk-Boarderkennung (02_network) importieren
         mkdir -p target/linux/mediatek/filogic/base-files
         cp -rf "$GL_TMP_DIR"/target/linux/mediatek/filogic/base-files/* target/linux/mediatek/filogic/base-files/ 2>/dev/null || true
 
-        # 3. Gerätedefinition in filogic.mk sicherstellen
+        # 3. Gerätedefinition in filogic.mk einbinden
         if ! grep -q "glinet_gl-mt5000" target/linux/mediatek/image/filogic.mk 2>/dev/null; then
             for mk in "$GL_TMP_DIR"/target/linux/mediatek/image/*.mk; do
                 if grep -q "glinet_gl-mt5000" "$mk" 2>/dev/null; then
@@ -73,8 +73,7 @@ elif [[ "$WORKFLOW_NAME" == "gl-mt5000_immortalwrt" || "$WORKFLOW_NAME" == "GL-M
             done
         fi
 
-        # 4. Kernel-Patches für RTL8366UB versionsunabhängig übertragen
-        # Findet den Quell-Patchordner bei GL.iNet (egal ob patches-5.4 oder 5.15)
+        # 4. Kernel-Patches für Realtek RTL8366UB versionsunabhängig übertragen
         GL_PATCH_DIR=$(find "$GL_TMP_DIR"/target/linux/mediatek/ -maxdepth 1 -type d -name "patches-*" | head -n 1)
 
         if [ -n "$GL_PATCH_DIR" ] && [ -d "$GL_PATCH_DIR" ]; then
@@ -87,11 +86,11 @@ elif [[ "$WORKFLOW_NAME" == "gl-mt5000_immortalwrt" || "$WORKFLOW_NAME" == "GL-M
             done
         fi
 
-        # 4b. Treiber-Quellcode direkt in den mediatek/files Kernel-Baum spiegeln (Fallback falls Patching übersprungen wird)
+        # 4b. Treiberdateien direkt in den Kernel-Quellbaum spiegeln
         mkdir -p target/linux/mediatek/files/drivers/net/dsa/realtek
         find "$GL_TMP_DIR" -type f \( -name "*rtl8366*" -o -name "*realtek*" \) -path "*/drivers/net/dsa/*" -exec cp -f {} target/linux/mediatek/files/drivers/net/dsa/realtek/ \; 2>/dev/null || true
 
-        # 5. Kernel-Treiber für DSA & RTL8366 deklarieren + interaktive Abfragen abfangen
+        # 5. Kernel-Symbole in allen Target-Configs verankern und Kconfig-Prompts neutralisieren
         for cfg in target/linux/mediatek/filogic/config-* target/linux/mediatek/config-*; do
             if [ -f "$cfg" ]; then
                 sed -i '/CONFIG_NET_DSA/d' "$cfg"
@@ -127,6 +126,15 @@ CONFIG_NET_DSA_VITESSE_VSC73XX=n
 EOF
             fi
         done
+
+        # 6. Paket-Selektion direkt für OpenWrt vorschreiben (RootFS-Integration)
+        mkdir -p package/base-files/files/etc/modules.d
+        cat << 'EOF' >> .config 2>/dev/null || true
+CONFIG_PACKAGE_kmod-dsa-realtek=y
+CONFIG_PACKAGE_kmod-dsa-realtek-rtl8366ub=y
+CONFIG_PACKAGE_kmod-dsa-tag-rtl4-a=y
+CONFIG_PACKAGE_kmod-switch-rtl8366-smi=y
+EOF
 
         rm -rf "$GL_TMP_DIR"
     fi
