@@ -73,11 +73,10 @@ elif [[ "$WORKFLOW_NAME" == "gl-mt5000_immortalwrt" || "$WORKFLOW_NAME" == "GL-M
             done
         fi
 
-        # 4. Kernel-Patches für Realtek Switch selektiv kopieren (nur wenn passende Kernelversion vorhanden)
+        # 4. Kernel-Patches für Realtek Switch selektiv kopieren (nur bei passender Kernelversion)
         for pdir in target/linux/mediatek/patches-*; do
             if [ -d "$pdir" ]; then
                 kver=$(basename "$pdir" | sed 's/patches-//')
-                # Nur kopieren, wenn der Quellordner von GL.iNet für denselben Kernel existiert
                 if [ -d "$GL_TMP_DIR/target/linux/mediatek/patches-$kver" ]; then
                     cp -f "$GL_TMP_DIR/target/linux/mediatek/patches-$kver"/*rtl8366* "$pdir"/ 2>/dev/null || true
                     cp -f "$GL_TMP_DIR/target/linux/mediatek/patches-$kver"/*realtek* "$pdir"/ 2>/dev/null || true
@@ -85,7 +84,7 @@ elif [[ "$WORKFLOW_NAME" == "gl-mt5000_immortalwrt" || "$WORKFLOW_NAME" == "GL-M
             fi
         done
 
-        # 5. Kernel-Treiber für DSA & RTL8366 sauber deklarieren
+        # 5. Kernel-Treiber für DSA & RTL8366 deklarieren + neue DSA-Abfragen mit Defaults belegen
         for cfg in target/linux/mediatek/filogic/config-* target/linux/mediatek/config-*; do
             if [ -f "$cfg" ]; then
                 sed -i '/CONFIG_NET_DSA/d' "$cfg"
@@ -103,6 +102,22 @@ CONFIG_FIXED_PHY=y
 CONFIG_USB_NET_DRIVERS=y
 CONFIG_USB_RTL8152=y
 CONFIG_USB_NET_CDC_NCM=y
+# Interaktive syncconfig Prompts im neuen Kernel 6.18 abfangen:
+CONFIG_NET_DSA_AN8855=n
+CONFIG_NET_DSA_BCM_SF2=n
+CONFIG_NET_DSA_LOOP=n
+CONFIG_NET_DSA_HIRSCHMANN_HELLCREEK=n
+CONFIG_NET_DSA_MICROCHIP_KSZ9477=n
+CONFIG_NET_DSA_MICROCHIP_KSZ8795=n
+CONFIG_NET_DSA_MV88E6060=n
+CONFIG_NET_DSA_MV88E6XXX=n
+CONFIG_NET_DSA_AR9331=n
+CONFIG_NET_DSA_SJA1105=n
+CONFIG_NET_DSA_XRS700X=n
+CONFIG_NET_DSA_QCA8K=n
+CONFIG_NET_DSA_REALTEK_RTL8365MB=n
+CONFIG_NET_DSA_SMSC_LAN9303=n
+CONFIG_NET_DSA_VITESSE_VSC73XX=n
 EOF
             fi
         done
