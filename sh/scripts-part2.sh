@@ -102,8 +102,8 @@ clone_custom_repos() {
 echo "--- DIY Part 2: Skriptausführung gestartet ---"
 echo "WORKFLOW_NAME: $WORKFLOW_NAME"
 
-# 1. DEIN ORIGINALER WORKFLOW (Build filogic.yml / GL-MT5000) - 100% UNBERÜHRT
-if [[ "$WORKFLOW_NAME" == "gl-mt5000_immortalwrt" || "$WORKFLOW_NAME" == "GL-MT5000" || "$WORKFLOW_NAME" =~ "GL-MT5000" ]]; then
+# 1. ORIGINALE IMMORTALWRT PIPELINE (Build immortalwrt / gl-mt5000_immortalwrt)
+if [[ "$WORKFLOW_NAME" == "gl-mt5000_immortalwrt" || "$WORKFLOW_NAME" == "Build immortalwrt" ]]; then
     echo ">>> Konfiguriere GL-MT5000 (ImmortalWrt) Board- und Treibereinstellungen <<<"
 
     # 1. 02_network patchen
@@ -400,6 +400,7 @@ exit 0
 EOF
     chmod +x package/base-files/files/etc/uci-defaults/99-gl-mt5000-wan-rescue
 
+# STANDARD-ZWEIG (Hier landet Build filogic.yml mit workflow_name: GL-MT5000 sowie alle anderen Router)
 else
     patch_rust_makefile
     reset_custom_package_dir
