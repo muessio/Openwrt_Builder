@@ -96,9 +96,16 @@ jobs:
         cd openwrt
         [ -f $GITHUB_WORKSPACE/$DIY_P2_SH ] && $GITHUB_WORKSPACE/$DIY_P2_SH || true
 
+        echo "CONFIG_PACKAGE_kmod-dsa-realtek=y" >> .config
+        echo "CONFIG_PACKAGE_kmod-dsa-realtek-rtl8366ub=y" >> .config
+        echo "CONFIG_PACKAGE_kmod-dsa-tag-rtl4-a=y" >> .config
+        echo "CONFIG_PACKAGE_kmod-switch-rtl8366-smi=y" >> .config
+
         make defconfig
-        # Interaktive Kernel-Abfragen automatisch mit Standardwerten (Default/No) auflösen:
         make -C target/linux olddefconfig || true
+
+        echo "=== Überprüfe Status der DSA-Treiber in .config ==="
+        grep -E "CONFIG_PACKAGE_kmod-dsa|CONFIG_TARGET_DEVICE.*gl-mt5000" .config || true
 
     - name: 下载软件包
       id: package
