@@ -97,6 +97,8 @@ jobs:
         [ -f $GITHUB_WORKSPACE/$DIY_P2_SH ] && $GITHUB_WORKSPACE/$DIY_P2_SH || true
 
         make defconfig
+        # Interaktive Kernel-Abfragen automatisch mit Standardwerten (Default/No) auflösen:
+        make -C target/linux olddefconfig || true
 
     - name: 下载软件包
       id: package
