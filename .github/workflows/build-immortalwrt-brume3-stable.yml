@@ -1,0 +1,150 @@
+name: Immortalwrt Brume 3 stable
+
+on:
+  repository_dispatch:
+  workflow_dispatch:
+
+env:
+  REPO_URL: https://github.com/immortalwrt/immortalwrt.git
+  REPO_BRANCH: openwrt-25.12
+  FEEDS_CONF: feeds.conf.default
+  CONFIG_FILE: immortalwrt.config
+  DIY_P1_SH: sh/scripts-part1.sh
+  DIY_P2_SH: sh/scripts-part2.sh
+  UPLOAD_BIN_DIR: false
+  UPLOAD_FIRMWARE: true
+  UPLOAD_RELEASE: true
+  TZ: Europe/Berlin
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+
+    steps:
+    - name: 检查项目分支
+      uses: actions/checkout@v4
+
+    - name: 释放磁盘空间
+      uses: jlumbroso/free-disk-space@main
+      with:
+        tool-cache: false
+        android: true
+        dotnet: true
+        haskell: true
+        large-packages: true
+        docker-images: true
+        swap-storage: true
+
+    - name: 初始化环境
+      env:
+        DEBIAN_FRONTEND: noninteractive
+      run: |
+        sudo rm -rf /etc/apt/sources.list.d/* /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+        sudo -E apt-get -qq update
+        sudo -E apt-get -qq install -y $(cat package/depends-ubuntu-2204)
+        sudo -E apt-get -qq autoremove --purge
+        sudo -E apt-get -qq clean
+        sudo timedatectl set-timezone "$TZ"
+        sudo mkdir -p /workdir
+        sudo chown $USER:$GROUPS /workdir
+
+    - name: 克隆源代码
+      working-directory: /workdir
+      run: |
+        df -hT $PWD
+        git clone $REPO_URL -b $REPO_BRANCH openwrt
+        ln -sf /workdir/openwrt $GITHUB_WORKSPACE/openwrt
+
+    - name: 加载自定义源
+      run: |
+        [ -e $FEEDS_CONF ] && cp $FEEDS_CONF openwrt/feeds.conf.default
+        chmod +x $DIY_P1_SH
+        cd openwrt
+        $GITHUB_WORKSPACE/$DIY_P1_SH
+        ./scripts/feeds update -a
+
+    - name: 安装源
+      run: cd openwrt && ./scripts/feeds install -a
+
+    - name: 加载自定义配置
+      run: |
+        [ -e $CONFIG_FILE ] && cp $CONFIG_FILE openwrt/.config
+        chmod +x $DIY_P2_SH
+        cd openwrt
+        $GITHUB_WORKSPACE/$DIY_P2_SH
+
+        # DSA-Treiber direkt in die Konfiguration injizieren
+        cat >> .config << 'EOF'
+        CONFIG_PACKAGE_kmod-dsa=y
+        CONFIG_PACKAGE_kmod-dsa-realtek=y
+        CONFIG_PACKAGE_kmod-dsa-rtl8366rb=y
+        CONFIG_PACKAGE_kmod-switch-rtl8366-smi=y
+        CONFIG_PACKAGE_kmod-dsa-tag-rtl4-a=y
+        EOF
+
+        # Konfiguration bereinigen und Abhängigkeiten auflösen
+        make defconfig
+        make -C target/linux olddefconfig || true
+
+        echo "=== Überprüfe Status der DSA-Treiber in .config ==="
+        grep -E "CONFIG_PACKAGE_kmod-(dsa|switch)" .config || true
+
+    - name: 下载软件包
+      id: package
+      run: |
+        cd openwrt
+        make download -j8
+        find dl -size -1024c -exec ls -l {} \;
+        find dl -size -1024c -exec rm -f {} \;
+
+    - name: 编译固件
+      id: compile
+      run: |
+        cd openwrt
+        echo -e "$(nproc) thread compile"
+        make -j$(nproc) || make -j1 V=s target/linux/compile
+        echo "status=success" >> $GITHUB_OUTPUT
+        grep "CONFIG_TARGET=[a-z0-9]" .config | head -n 1 | sed 's/CONFIG_TARGET=/DEVICE_TARGET=/' >> $GITHUB_ENV
+        grep "CONFIG_TARGET_SUBTARGET=[a-z0-9]" .config | head -n 1 | sed 's/CONFIG_TARGET_SUBTARGET=/DEVICE_SUBTARGET=/' >> $GITHUB_ENV
+
+    - name: 整理文件
+      id: organize
+      if: env.UPLOAD_FIRMWARE == 'true' && !cancelled()
+      run: |
+        cd openwrt/bin/targets/*/*
+        rm -rf packages
+        echo "FIRMWARE=$PWD" >> $GITHUB_ENV
+        echo "status=success" >> $GITHUB_OUTPUT
+
+    - name: 上传 bin 目录
+      uses: actions/upload-artifact@v4
+      if: steps.compile.outputs.status == 'success' && env.UPLOAD_BIN_DIR == 'true'
+      with:
+        name: OpenWrt_bin_${{ env.DEVICE_TARGET }}_${{ env.DEVICE_SUBTARGET }}_${{ env.FILE_DATE }}
+        path: openwrt/bin
+
+    - name: 上传固件目录
+      uses: actions/upload-artifact@v4
+      if: steps.organize.outputs.status == 'success' && !cancelled()
+      with:
+        name: OpenWrt_firmware_${{ env.DEVICE_TARGET }}_${{ env.DEVICE_SUBTARGET }}_${{ env.FILE_DATE }}
+        path: ${{ env.FIRMWARE }}
+
+    - name: 生成发布标签
+      id: tag
+      if: env.UPLOAD_RELEASE == 'true' && !cancelled()
+      run: |
+        echo "release_tag=$(date +"%Y.%m.%d-%H%M")-stable" >> $GITHUB_OUTPUT
+        touch release.txt
+        echo "ImmortalWrt Stable Build (openwrt-25.12) for GL-MT5000" >> release.txt
+        echo "status=success" >> $GITHUB_OUTPUT
+
+    - name: 发布固件到 Release
+      uses: softprops/action-gh-release@master
+      if: steps.tag.outputs.release_tag && !cancelled()
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        tag_name: ${{ steps.tag.outputs.release_tag }}
+        body_path: release.txt
+        files: ${{ env.FIRMWARE }}/*
