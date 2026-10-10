@@ -18,13 +18,14 @@ env:
 
 jobs:
   build:
+    name: Kompiliere GL-MT5000 Stable
     runs-on: ubuntu-22.04
 
     steps:
-    - name: 检查项目分支
+    - name: Repository auschecken
       uses: actions/checkout@v4
 
-    - name: 释放磁盘空间
+    - name: Speicherplatz freigeben
       uses: jlumbroso/free-disk-space@main
       with:
         tool-cache: false
@@ -35,7 +36,7 @@ jobs:
         docker-images: true
         swap-storage: true
 
-    - name: 初始化环境
+    - name: Build-Umgebung initialisieren
       env:
         DEBIAN_FRONTEND: noninteractive
       run: |
@@ -48,27 +49,27 @@ jobs:
         sudo mkdir -p /workdir
         sudo chown $USER:$GROUPS /workdir
 
-    - name: 克隆源代码
+    - name: Quellcode klonen
       working-directory: /workdir
       run: |
         df -hT $PWD
-        git clone $REPO_URL -b $REPO_BRANCH openwrt
+        git clone $REPO_URL -b$REPO_BRANCH openwrt
         ln -sf /workdir/openwrt $GITHUB_WORKSPACE/openwrt
 
-    - name: 加载自定义源
+    - name: Feeds laden und DIY-Skript Teil 1 ausführen
       run: |
-        [ -e $FEEDS_CONF ] && cp $FEEDS_CONF openwrt/feeds.conf.default
+        [ -e $FEEDS_CONF ] && cp$FEEDS_CONF openwrt/feeds.conf.default
         chmod +x $DIY_P1_SH
         cd openwrt
         $GITHUB_WORKSPACE/$DIY_P1_SH
         ./scripts/feeds update -a
 
-    - name: 安装源
+    - name: Feeds installieren
       run: cd openwrt && ./scripts/feeds install -a
 
-    - name: 加载自定义配置
+    - name: Benutzerdefinierte Konfiguration anwenden und DSA-Treiber injizieren
       run: |
-        [ -e $CONFIG_FILE ] && cp $CONFIG_FILE openwrt/.config
+        [ -e $CONFIG_FILE ] && cp$CONFIG_FILE openwrt/.config
         chmod +x $DIY_P2_SH
         cd openwrt
         $GITHUB_WORKSPACE/$DIY_P2_SH
@@ -85,66 +86,3 @@ jobs:
         # Konfiguration bereinigen und Abhängigkeiten auflösen
         make defconfig
         make -C target/linux olddefconfig || true
-
-        echo "=== Überprüfe Status der DSA-Treiber in .config ==="
-        grep -E "CONFIG_PACKAGE_kmod-(dsa|switch)" .config || true
-
-    - name: 下载软件包
-      id: package
-      run: |
-        cd openwrt
-        make download -j8
-        find dl -size -1024c -exec ls -l {} \;
-        find dl -size -1024c -exec rm -f {} \;
-
-    - name: 编译固件
-      id: compile
-      run: |
-        cd openwrt
-        echo -e "$(nproc) thread compile"
-        make -j$(nproc) || make -j1 V=s target/linux/compile
-        echo "status=success" >> $GITHUB_OUTPUT
-        grep "CONFIG_TARGET=[a-z0-9]" .config | head -n 1 | sed 's/CONFIG_TARGET=/DEVICE_TARGET=/' >> $GITHUB_ENV
-        grep "CONFIG_TARGET_SUBTARGET=[a-z0-9]" .config | head -n 1 | sed 's/CONFIG_TARGET_SUBTARGET=/DEVICE_SUBTARGET=/' >> $GITHUB_ENV
-
-    - name: 整理文件
-      id: organize
-      if: env.UPLOAD_FIRMWARE == 'true' && !cancelled()
-      run: |
-        cd openwrt/bin/targets/*/*
-        rm -rf packages
-        echo "FIRMWARE=$PWD" >> $GITHUB_ENV
-        echo "status=success" >> $GITHUB_OUTPUT
-
-    - name: 上传 bin 目录
-      uses: actions/upload-artifact@v4
-      if: steps.compile.outputs.status == 'success' && env.UPLOAD_BIN_DIR == 'true'
-      with:
-        name: OpenWrt_bin_${{ env.DEVICE_TARGET }}_${{ env.DEVICE_SUBTARGET }}_${{ env.FILE_DATE }}
-        path: openwrt/bin
-
-    - name: 上传固件目录
-      uses: actions/upload-artifact@v4
-      if: steps.organize.outputs.status == 'success' && !cancelled()
-      with:
-        name: OpenWrt_firmware_${{ env.DEVICE_TARGET }}_${{ env.DEVICE_SUBTARGET }}_${{ env.FILE_DATE }}
-        path: ${{ env.FIRMWARE }}
-
-    - name: 生成发布标签
-      id: tag
-      if: env.UPLOAD_RELEASE == 'true' && !cancelled()
-      run: |
-        echo "release_tag=$(date +"%Y.%m.%d-%H%M")-stable" >> $GITHUB_OUTPUT
-        touch release.txt
-        echo "ImmortalWrt Stable Build (openwrt-25.12) for GL-MT5000" >> release.txt
-        echo "status=success" >> $GITHUB_OUTPUT
-
-    - name: 发布固件到 Release
-      uses: softprops/action-gh-release@master
-      if: steps.tag.outputs.release_tag && !cancelled()
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      with:
-        tag_name: ${{ steps.tag.outputs.release_tag }}
-        body_path: release.txt
-        files: ${{ env.FIRMWARE }}/*
